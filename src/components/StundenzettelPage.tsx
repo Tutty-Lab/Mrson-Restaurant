@@ -9,6 +9,7 @@ import { minutesToDecimalHours, minutesToTime } from "../lib/time";
 import { MONTH_NAMES_DE } from "../lib/dateFormat";
 import { publicHolidayNames } from "../lib/holidays";
 import { format } from "date-fns";
+import { employmentLabelDe } from "../lib/employment";
 
 // Deutscher Monats-Titel für das offizielle Dokument.
 function monthLabelDe(year: number, month: number): string {
@@ -53,7 +54,7 @@ export function StundenzettelPage({
 
       <div className="grid grid-cols-2 gap-x-8 gap-y-1 mb-3">
         <Info label="Firmenname" value={schedule.companyName || "—"} />
-        <Info label="Beschäftigungsart" value={employee.employmentType === "VOLLZEIT" ? "Vollzeit" : "Teilzeit"} />
+        <Info label="Beschäftigungsart" value={employmentLabelDe(employee.employmentType)} />
         <Info label="Mitarbeiter" value={employee.name} />
         <Info label="Monat" value={MONTH_NAMES_DE[schedule.month - 1]} />
         {/*

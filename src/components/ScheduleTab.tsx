@@ -15,6 +15,7 @@ import { publicHolidays } from "../lib/holidays";
 import { ShiftCellEditor } from "./ShiftCellEditor";
 import { ScheduleDayView } from "./ScheduleDayView";
 import { weeksOfMonth } from "../lib/weeks";
+import { employmentShortVi } from "../lib/employment";
 
 function isWeekendKey(iso: string): boolean {
   const k = weekdayKeyOf(parseIsoDate(iso));
@@ -290,7 +291,7 @@ export function ScheduleTab({ store }: { store: UseScheduleReturn }) {
                       {emp.name}
                     </td>
                     <td className="border-b border-slate-100 px-2 py-1 text-slate-500">
-                      {emp.employmentType === "VOLLZEIT" ? "TT" : "BT"}
+                      {employmentShortVi(emp.employmentType)}
                     </td>
                     <td className="border-b border-slate-100 px-2 py-1 text-right text-slate-500">
                       {emp.targetMinutes / 60}h

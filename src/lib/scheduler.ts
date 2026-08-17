@@ -113,6 +113,9 @@ const MIN_SHIFT_MINUTES = 3 * 60;
 const ALLOWED_HOURS: Record<Employee["employmentType"], readonly number[]> = {
   VOLLZEIT: [4, 5, 6, 7, 8, 9],
   TEILZEIT: [3, 4, 5, 6, 7, 8, 9],
+  // Minijob ist arbeitsrechtlich eine Form der Teilzeit – gleiche Längen.
+  // Begrenzt wird er über das Monats-Soll, nicht über die Schichtlänge.
+  MINIJOB: [3, 4, 5, 6, 7, 8, 9],
 };
 
 /**
@@ -221,6 +224,7 @@ function canDecompose(hours: number, allowed: readonly number[]): boolean {
 const PREFERRED_HOURS: Record<Employee["employmentType"], number> = {
   VOLLZEIT: MAX_SHIFT_HOURS,
   TEILZEIT: MAX_SHIFT_HOURS,
+  MINIJOB: MAX_SHIFT_HOURS,
 };
 
 /** Größte Schichtlänge (Stunden), deren Anwesenheit noch ins Fenster passt (0 = keine). */
@@ -513,7 +517,7 @@ function chooseTemplateType(
   // auf 0,95 hochgezwungen – damit stand am Sonntag praktisch niemand zur
   // Öffnung um 11:00 im Laden. Jetzt gilt die konfigurierte Quote.
   let threshold = desired;
-  if (employmentType === "TEILZEIT") threshold += 0.15;
+  if (employmentType !== "VOLLZEIT") threshold += 0.15;
 
   return currentLateRatio < threshold ? "LATE" : "EARLY";
 }

@@ -23,6 +23,7 @@ export function Dashboard({ store }: { store: UseScheduleReturn }) {
   const { schedule, validation, peakGaps } = store;
   const vz = schedule.employees.filter((e) => e.employmentType === "VOLLZEIT").length;
   const tz = schedule.employees.filter((e) => e.employmentType === "TEILZEIT").length;
+  const mj = schedule.employees.filter((e) => e.employmentType === "MINIJOB").length;
   const targetMin = schedule.employees.reduce((s, e) => s + e.targetMinutes, 0);
   const plannedMin = schedule.shifts.reduce((s, x) => s + x.paidMinutes, 0);
   const notGenerated = schedule.shifts.length === 0;
@@ -45,6 +46,7 @@ export function Dashboard({ store }: { store: UseScheduleReturn }) {
         <Stat label="Số nhân viên" value={String(schedule.employees.length)} />
         <Stat label="Toàn thời gian" value={String(vz)} />
         <Stat label="Bán thời gian" value={String(tz)} />
+        <Stat label="Minijob" value={String(mj)} />
         <Stat label="Tổng giờ định mức" value={`${minutesToDecimalHours(targetMin)} h`} />
         <Stat label="Tổng giờ đã xếp" value={`${minutesToDecimalHours(plannedMin)} h`} />
         <Stat label="Trạng thái kiểm tra" value={statusValue} accent={statusAccent} />

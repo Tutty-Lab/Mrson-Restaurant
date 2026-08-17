@@ -52,6 +52,7 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
           >
             <option value="VOLLZEIT">Toàn thời gian</option>
             <option value="TEILZEIT">Bán thời gian</option>
+                    <option value="MINIJOB">Minijob</option>
           </select>
         </label>
         <label className="flex flex-col sm:w-32">
@@ -112,6 +113,7 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
                   >
                     <option value="VOLLZEIT">Toàn thời gian</option>
                     <option value="TEILZEIT">Bán thời gian</option>
+                    <option value="MINIJOB">Minijob</option>
                   </select>
                 </label>
                 <label className="flex flex-col sm:w-32">

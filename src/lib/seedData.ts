@@ -36,33 +36,38 @@ export type SeedMonth = {
   maxPeakGaps?: number;
 };
 
-/** Juni 2026 – volle Besetzung, so wie der Chef sie beschrieben hat. */
+/** Juni 2026 – volle Besetzung: 3 Stammkräfte + 5 Minijobs. */
 const JUNE_2026: Employee[] = [
-  makeEmployee("vz-1", "Vollzeit 1", "VOLLZEIT", 173),
-  makeEmployee("vz-2", "Vollzeit 2", "VOLLZEIT", 195),
-  makeEmployee("mini-1", "Mini 1 (Fr + So)", "TEILZEIT", 43),
-  makeEmployee("mini-2", "Mini 2", "TEILZEIT", 43),
-  makeEmployee("mini-3", "Mini 3", "TEILZEIT", 39),
-  makeEmployee("mini-4", "Mini 4", "TEILZEIT", 35),
+  makeEmployee("st-1", "Stamm 1", "VOLLZEIT", 173),
+  makeEmployee("st-2", "Stamm 2", "VOLLZEIT", 195),
+  makeEmployee("st-3", "Stamm 3", "TEILZEIT", 120),
+  makeEmployee("mini-1", "Mini 1 (Fr + So)", "MINIJOB", 43),
+  makeEmployee("mini-2", "Mini 2", "MINIJOB", 43),
+  makeEmployee("mini-3", "Mini 3", "MINIJOB", 39),
+  makeEmployee("mini-4", "Mini 4", "MINIJOB", 39),
+  makeEmployee("mini-5", "Mini 5", "MINIJOB", 35),
 ];
 
-/** Juli 2026 – eine Minijob-Kraft weniger (Urlaub). */
+/** Juli 2026 – zwei Minijob-Kräfte weniger (Urlaub). */
 const JULY_2026: Employee[] = [
-  makeEmployee("vz-1", "Vollzeit 1", "VOLLZEIT", 173),
-  makeEmployee("vz-2", "Vollzeit 2", "VOLLZEIT", 195),
-  makeEmployee("mini-1", "Mini 1 (Fr + So)", "TEILZEIT", 43),
-  makeEmployee("mini-2", "Mini 2", "TEILZEIT", 43),
-  makeEmployee("mini-3", "Mini 3", "TEILZEIT", 39),
+  makeEmployee("st-1", "Stamm 1", "VOLLZEIT", 173),
+  makeEmployee("st-2", "Stamm 2", "VOLLZEIT", 195),
+  makeEmployee("st-3", "Stamm 3", "TEILZEIT", 120),
+  makeEmployee("mini-1", "Mini 1 (Fr + So)", "MINIJOB", 43),
+  makeEmployee("mini-2", "Mini 2", "MINIJOB", 43),
+  makeEmployee("mini-3", "Mini 3", "MINIJOB", 39),
 ];
 
-/** August 2026 – Minijobs etwas aufgestockt. */
+/** August 2026 – Minijobs am Limit (52 h = 12 h/Woche). */
 const AUGUST_2026: Employee[] = [
-  makeEmployee("vz-1", "Vollzeit 1", "VOLLZEIT", 173),
-  makeEmployee("vz-2", "Vollzeit 2", "VOLLZEIT", 195),
-  makeEmployee("mini-1", "Mini 1 (Fr + So)", "TEILZEIT", 43),
-  makeEmployee("mini-2", "Mini 2", "TEILZEIT", 43),
-  makeEmployee("mini-3", "Mini 3", "TEILZEIT", 43),
-  makeEmployee("mini-4", "Mini 4", "TEILZEIT", 39),
+  makeEmployee("st-1", "Stamm 1", "VOLLZEIT", 173),
+  makeEmployee("st-2", "Stamm 2", "VOLLZEIT", 195),
+  makeEmployee("st-3", "Stamm 3", "TEILZEIT", 130),
+  makeEmployee("mini-1", "Mini 1 (Fr + So)", "MINIJOB", 52),
+  makeEmployee("mini-2", "Mini 2", "MINIJOB", 52),
+  makeEmployee("mini-3", "Mini 3", "MINIJOB", 43),
+  makeEmployee("mini-4", "Mini 4", "MINIJOB", 43),
+  makeEmployee("mini-5", "Mini 5", "MINIJOB", 39),
 ];
 
 /** Die drei Monate, ältester zuerst. */

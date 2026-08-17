@@ -21,7 +21,7 @@ function shiftCost(length: number, type: EmploymentType): number {
     // Rest mit möglichst großen Blöcken.
     return 100 - length * length;
   }
-  // TEILZEIT: fixe Basis je Schicht (weniger Tage bevorzugt) + Längen-Präferenz.
+  // TEILZEIT und MINIJOB: fixe Basis je Schicht + Längen-Präferenz.
   // Jede Länge aus SHIFT_LENGTHS braucht einen Eintrag – fehlt einer, wird die
   // Kosten-Summe NaN und die Länge fällt lautlos aus der DP heraus.
   const base = 3;

@@ -5,7 +5,28 @@
 
 import type { DateOverride, WorkHoursConfig } from "./lib/workHours";
 
-export type EmploymentType = "VOLLZEIT" | "TEILZEIT";
+/**
+ * Anstellungsart. MINIJOB ist arbeitsrechtlich eine Form der Teilzeit und wird
+ * bei der Schichtplanung auch genauso behandelt – die Trennung dient der
+ * Obergrenze und der Belegschaftsstruktur, nicht der Planung selbst.
+ */
+export type EmploymentType = "VOLLZEIT" | "TEILZEIT" | "MINIJOB";
+
+/**
+ * Vorgaben des Betriebs zur Belegschaft (Mrson Restaurant):
+ * höchstens drei Stammkräfte (Vollzeit oder Teilzeit) und fünf Minijobs.
+ * Wird das nicht eingehalten, plant die App trotzdem – die Mitarbeiterliste
+ * weist aber darauf hin.
+ */
+export const MAX_STAMM_EMPLOYEES = 3;
+export const MAX_MINIJOB_EMPLOYEES = 5;
+
+/**
+ * Minijob: höchstens 12 Stunden pro Woche, gerechnet wird aber im Monat.
+ * 12 h x 52/12 Wochen = 52 h im Monat.
+ */
+export const MINIJOB_MAX_WEEKLY_HOURS = 12;
+export const MINIJOB_MAX_MONTHLY_HOURS = Math.floor((MINIJOB_MAX_WEEKLY_HOURS * 52) / 12);
 
 export type ShiftType = "EARLY" | "LATE" | "CUSTOM";
 
