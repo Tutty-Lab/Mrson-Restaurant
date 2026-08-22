@@ -45,6 +45,21 @@ export type SeedMonth = {
  * mehr geht nicht, weil angebrochene Wochen am Monatsrand oft nur einen der
  * beiden Tage enthalten.
  */
+/**
+ * Alle Wochentage außer einem – für Kräfte mit festem freien Tag.
+ *
+ * Wie viel Luft dafür ist, entscheidet das Monats-Soll, nicht der Wunsch:
+ * bei höchstens 9 bezahlten Stunden am Tag braucht
+ *   120 h -> 14 Arbeitstage,  173 h -> 20,  195 h -> 22.
+ * Der Laden hat montags zu, im Juni bleiben also 25 offene Tage. 195 h lassen
+ * damit höchstens DREI freie Tage im ganzen Monat übrig – ein fester freier
+ * Wochentag kostet vier bis fünf und geht schlicht nicht auf. Deshalb hat hier
+ * nur die 173-h- und die 120-h-Kraft einen.
+ */
+const ohne = (frei: WeekdayKey): WeekdayKey[] =>
+  (["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as WeekdayKey[])
+    .filter((k) => k !== frei);
+
 const MINI_FR_SO = {
   ...makeEmployee("mini-1", "Mini 1 (Fr + CN)", "MINIJOB", 35),
   availableWeekdays: ["friday", "sunday"] as WeekdayKey[],
@@ -52,9 +67,10 @@ const MINI_FR_SO = {
 
 /** Juni 2026 – volle Besetzung: 3 Stammkräfte + 4 Minijobs = 7 Personen. */
 const JUNE_2026: Employee[] = [
-  makeEmployee("st-1", "Stamm 1", "VOLLZEIT", 173),
+  // Fester freier Tag zusätzlich zum Ruhetag des Ladens.
+  { ...makeEmployee("st-1", "Stamm 1", "VOLLZEIT", 173), availableWeekdays: ohne("tuesday") },
   makeEmployee("st-2", "Stamm 2", "VOLLZEIT", 195),
-  makeEmployee("st-3", "Stamm 3", "TEILZEIT", 120),
+  { ...makeEmployee("st-3", "Stamm 3", "TEILZEIT", 120), availableWeekdays: ohne("thursday") },
   { ...MINI_FR_SO },
   // 43 h wären der rechnerische Höchstwert (10 h x 52/12), praktisch aber
   // nicht erreichbar: dafür müsste jede Woche des Monats voll ausgeschöpft
@@ -66,9 +82,10 @@ const JUNE_2026: Employee[] = [
 
 /** Juli 2026 – zwei Minijob-Kräfte im Urlaub. */
 const JULY_2026: Employee[] = [
-  makeEmployee("st-1", "Stamm 1", "VOLLZEIT", 173),
+  // Fester freier Tag zusätzlich zum Ruhetag des Ladens.
+  { ...makeEmployee("st-1", "Stamm 1", "VOLLZEIT", 173), availableWeekdays: ohne("tuesday") },
   makeEmployee("st-2", "Stamm 2", "VOLLZEIT", 195),
-  makeEmployee("st-3", "Stamm 3", "TEILZEIT", 120),
+  { ...makeEmployee("st-3", "Stamm 3", "TEILZEIT", 120), availableWeekdays: ohne("thursday") },
   { ...MINI_FR_SO },
   // 43 h wären der rechnerische Höchstwert (10 h x 52/12), praktisch aber
   // nicht erreichbar: dafür müsste jede Woche des Monats voll ausgeschöpft
@@ -78,9 +95,10 @@ const JULY_2026: Employee[] = [
 
 /** August 2026 – Teilzeit aufgestockt, sonst wie Juni. */
 const AUGUST_2026: Employee[] = [
-  makeEmployee("st-1", "Stamm 1", "VOLLZEIT", 173),
+  // Fester freier Tag zusätzlich zum Ruhetag des Ladens.
+  { ...makeEmployee("st-1", "Stamm 1", "VOLLZEIT", 173), availableWeekdays: ohne("tuesday") },
   makeEmployee("st-2", "Stamm 2", "VOLLZEIT", 195),
-  makeEmployee("st-3", "Stamm 3", "TEILZEIT", 130),
+  { ...makeEmployee("st-3", "Stamm 3", "TEILZEIT", 130), availableWeekdays: ohne("thursday") },
   { ...MINI_FR_SO },
   // 43 h wären der rechnerische Höchstwert (10 h x 52/12), praktisch aber
   // nicht erreichbar: dafür müsste jede Woche des Monats voll ausgeschöpft

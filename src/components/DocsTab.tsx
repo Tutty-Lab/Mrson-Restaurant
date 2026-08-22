@@ -102,6 +102,14 @@ export function DocsTab() {
             <b>Nhân viên</b>. Bỏ trống = làm mọi ngày. Dùng được cả hai chiều: tick
             đúng T6 và CN cho người chỉ làm hai ngày đó, hoặc bỏ tick T2 cho người
             nghỉ cố định thứ 2.
+            <br />
+            <span className="text-slate-500">
+              Lưu ý: định mức tháng quyết định có đủ chỗ cho ngày nghỉ cố định hay
+              không. Ca dài nhất là 9 giờ, nên <b>120h cần 14 ngày làm</b>,{" "}
+              <b>173h cần 20 ngày</b>, <b>195h cần 22 ngày</b>. Quán nghỉ thứ 2 thì
+              tháng chỉ còn ~25 ngày mở cửa — người 195h vì thế chỉ nghỉ thêm được
+              tối đa 3 ngày cả tháng, không thể có ngày nghỉ cố định hàng tuần.
+            </span>
           </li>
           <li>
             <b>Ngày nghỉ phép (Urlaub)</b> do <b>người dùng tự chọn</b>, app không tự
@@ -115,6 +123,11 @@ export function DocsTab() {
             nhiều hơn luật vẫn được, có thể do hợp đồng hoặc chuyển từ năm trước).
           </li>
           <li>Không làm quá <b>6 ngày liên tiếp</b>.</li>
+          <li>
+            <b>Quán mở là phải có người</b> — không có phút nào trong giờ mở cửa mà
+            không ai trong quán. Trước đây app chỉ kiểm tra có người mở cửa và có
+            người đóng cửa, nên giữa ngày vẫn có lúc trống.
+          </li>
           <li>
             Mỗi người phải đạt <b>đúng định mức tháng</b> (Sollstunden) — không thừa, không thiếu.
           </li>

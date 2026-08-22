@@ -60,6 +60,16 @@ npm run preview  # Produktions-Build lokal ansehen
 Maßgeblich ist immer der Code; die Doku-Tabellen in der App (Tab **Tài liệu**)
 werden direkt aus den Konstanten gerendert und können daher nicht veralten.
 
+- **Der Laden ist nie offen und unbesetzt.** Geprüft wird jede Minute der
+  Öffnungszeit, nicht nur Auf- und Zusperren (`uncoveredMinutes`,
+  `dayDefect`). Vorher genügten zwei kurze Dienste an den beiden Enden, und in
+  der Mitte stand der Laden leer.
+- **Wie viele freie Tage möglich sind, entscheidet das Monats-Soll.** Bei
+  höchstens 9 bezahlten Stunden je Tag braucht 120 h 14 Arbeitstage, 173 h 20
+  und 195 h 22. Bei 25 offenen Tagen (Ruhetag Montag) bleiben einer 195-h-Kraft
+  damit höchstens drei freie Tage im Monat – ein fester freier Wochentag kostet
+  vier bis fünf und geht nicht auf. Das ist Arithmetik, kein Fehler des
+  Verfahrens.
 - **Höchstens 7 Beschäftigte** (Angabe des Betriebs). Verstoß = Warnung, kein
   Riegel.
 - **Minijob: höchstens 10 Stunden je WOCHE** (`MINIJOB_MAX_WEEKLY_HOURS`).
