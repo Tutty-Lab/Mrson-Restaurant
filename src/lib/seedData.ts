@@ -17,6 +17,7 @@
 
 import type { Employee, Schedule } from "../types";
 import { COMPANY_ADDRESS, COMPANY_NAME } from "./company";
+import type { WeekdayKey } from "./demand";
 import { makeEmployee } from "./sampleData";
 import { DEFAULT_WORK_HOURS } from "./workHours";
 
@@ -36,41 +37,59 @@ export type SeedMonth = {
   maxPeakGaps?: number;
 };
 
-/** Juni 2026 – volle Besetzung: 3 Stammkräfte + 5 Minijobs. */
+/**
+ * Die Minijob-Kraft, die laut Betrieb fest am Freitag und Sonntag arbeitet.
+ *
+ * Zwei Arbeitstage in der Woche heißen zwei Dienste – bei höchstens 10 Stunden
+ * je Woche also rund 5 Stunden je Dienst. Über den Monat sind das etwa 35 h;
+ * mehr geht nicht, weil angebrochene Wochen am Monatsrand oft nur einen der
+ * beiden Tage enthalten.
+ */
+const MINI_FR_SO = {
+  ...makeEmployee("mini-1", "Mini 1 (Fr + CN)", "MINIJOB", 35),
+  availableWeekdays: ["friday", "sunday"] as WeekdayKey[],
+};
+
+/** Juni 2026 – volle Besetzung: 3 Stammkräfte + 4 Minijobs = 7 Personen. */
 const JUNE_2026: Employee[] = [
   makeEmployee("st-1", "Stamm 1", "VOLLZEIT", 173),
   makeEmployee("st-2", "Stamm 2", "VOLLZEIT", 195),
   makeEmployee("st-3", "Stamm 3", "TEILZEIT", 120),
-  makeEmployee("mini-1", "Mini 1 (Fr + So)", "MINIJOB", 43),
-  makeEmployee("mini-2", "Mini 2", "MINIJOB", 43),
+  { ...MINI_FR_SO },
+  // 43 h wären der rechnerische Höchstwert (10 h x 52/12), praktisch aber
+  // nicht erreichbar: dafür müsste jede Woche des Monats voll ausgeschöpft
+  // werden, auch die angebrochenen am Rand.
+  makeEmployee("mini-2", "Mini 2", "MINIJOB", 39),
   makeEmployee("mini-3", "Mini 3", "MINIJOB", 39),
-  makeEmployee("mini-4", "Mini 4", "MINIJOB", 39),
-  makeEmployee("mini-5", "Mini 5", "MINIJOB", 35),
+  makeEmployee("mini-4", "Mini 4", "MINIJOB", 35),
 ];
 
-/** Juli 2026 – zwei Minijob-Kräfte weniger (Urlaub). */
+/** Juli 2026 – zwei Minijob-Kräfte im Urlaub. */
 const JULY_2026: Employee[] = [
   makeEmployee("st-1", "Stamm 1", "VOLLZEIT", 173),
   makeEmployee("st-2", "Stamm 2", "VOLLZEIT", 195),
   makeEmployee("st-3", "Stamm 3", "TEILZEIT", 120),
-  makeEmployee("mini-1", "Mini 1 (Fr + So)", "MINIJOB", 43),
-  makeEmployee("mini-2", "Mini 2", "MINIJOB", 43),
-  makeEmployee("mini-3", "Mini 3", "MINIJOB", 39),
+  { ...MINI_FR_SO },
+  // 43 h wären der rechnerische Höchstwert (10 h x 52/12), praktisch aber
+  // nicht erreichbar: dafür müsste jede Woche des Monats voll ausgeschöpft
+  // werden, auch die angebrochenen am Rand.
+  makeEmployee("mini-2", "Mini 2", "MINIJOB", 39),
 ];
 
-/** August 2026 – Minijobs am Limit (52 h = 12 h/Woche). */
+/** August 2026 – Teilzeit aufgestockt, sonst wie Juni. */
 const AUGUST_2026: Employee[] = [
   makeEmployee("st-1", "Stamm 1", "VOLLZEIT", 173),
   makeEmployee("st-2", "Stamm 2", "VOLLZEIT", 195),
   makeEmployee("st-3", "Stamm 3", "TEILZEIT", 130),
-  makeEmployee("mini-1", "Mini 1 (Fr + So)", "MINIJOB", 52),
-  makeEmployee("mini-2", "Mini 2", "MINIJOB", 52),
-  makeEmployee("mini-3", "Mini 3", "MINIJOB", 43),
-  makeEmployee("mini-4", "Mini 4", "MINIJOB", 43),
-  makeEmployee("mini-5", "Mini 5", "MINIJOB", 39),
+  { ...MINI_FR_SO },
+  // 43 h wären der rechnerische Höchstwert (10 h x 52/12), praktisch aber
+  // nicht erreichbar: dafür müsste jede Woche des Monats voll ausgeschöpft
+  // werden, auch die angebrochenen am Rand.
+  makeEmployee("mini-2", "Mini 2", "MINIJOB", 39),
+  makeEmployee("mini-3", "Mini 3", "MINIJOB", 39),
+  makeEmployee("mini-4", "Mini 4", "MINIJOB", 35),
 ];
 
-/** Die drei Monate, ältester zuerst. */
 export const SEED_MONTHS: SeedMonth[] = [
   { year: 2026, month: 6, label: "Juni 2026", employees: JUNE_2026 },
   { year: 2026, month: 7, label: "Juli 2026", employees: JULY_2026 },

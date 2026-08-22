@@ -22,11 +22,17 @@ export const SAMPLE_EMPLOYEES: Employee[] = [
   makeEmployee("ST1", "ST1", "VOLLZEIT", 173),
   makeEmployee("ST2", "ST2", "VOLLZEIT", 195),
   makeEmployee("ST3", "ST3", "TEILZEIT", 120),
-  makeEmployee("MJ1", "MJ1", "MINIJOB", 52),
-  makeEmployee("MJ2", "MJ2", "MINIJOB", 52),
-  makeEmployee("MJ3", "MJ3", "MINIJOB", 43),
-  makeEmployee("MJ4", "MJ4", "MINIJOB", 43),
-  makeEmployee("MJ5", "MJ5", "MINIJOB", 39),
+  // Diese Kraft arbeitet fest Freitag und Sonntag – zwei Tage, also zwei
+  // Dienste in der Woche.
+  { ...makeEmployee("MJ1", "MJ1", "MINIJOB", 30), availableWeekdays: ["friday", "sunday"] },
+  // Diese Zahlen liegen bewusst unter dem rechnerischen Höchstwert von 43 h
+  // (10 h x 52/12). Der Wochendeckel macht das Monats-Soll empfindlich gegen
+  // angebrochene Wochen und geschlossene Tage: im Dezember mit den Feiertagen
+  // sind keine 39 h mehr unterzubringen. Die Beispieldaten müssen in JEDEM
+  // Monat aufgehen, deshalb hier der vorsichtige Wert.
+  makeEmployee("MJ2", "MJ2", "MINIJOB", 34),
+  makeEmployee("MJ3", "MJ3", "MINIJOB", 34),
+  makeEmployee("MJ4", "MJ4", "MINIJOB", 31),
 ];
 
 export function createSampleSchedule(): Schedule {

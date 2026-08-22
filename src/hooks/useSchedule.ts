@@ -131,8 +131,8 @@ export function useSchedule() {
   }, [schedule, originalShifts]);
 
   const validation: ValidationResult = useMemo(
-    () => validateSchedule(schedule.employees, schedule.shifts),
-    [schedule.employees, schedule.shifts],
+    () => validateSchedule(schedule.employees, schedule.shifts, schedule.year),
+    [schedule.employees, schedule.shifts, schedule.year],
   );
 
   /**

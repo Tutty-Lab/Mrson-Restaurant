@@ -60,6 +60,25 @@ npm run preview  # Produktions-Build lokal ansehen
 Maßgeblich ist immer der Code; die Doku-Tabellen in der App (Tab **Tài liệu**)
 werden direkt aus den Konstanten gerendert und können daher nicht veralten.
 
+- **Höchstens 7 Beschäftigte** (Angabe des Betriebs). Verstoß = Warnung, kein
+  Riegel.
+- **Minijob: höchstens 10 Stunden je WOCHE** (`MINIJOB_MAX_WEEKLY_HOURS`).
+  Bewusst je Woche geprüft und nicht über den Monat gemittelt – sonst ginge
+  eine 20-Stunden-Woche durch, solange eine andere leer bleibt. Arbeitet
+  jemand zwei Tage in der Woche, werden daraus zwei Dienste; die Wochenstunden
+  verteilen sich auf die offenen Tage, statt in einem langen Dienst aufzugehen.
+- **Feste Arbeitstage je Person** (`availableWeekdays`, Tab *Nhân viên*).
+  Leer = jeder Tag. Ein Feld für beide Richtungen: nur Fr+So ankreuzen für eine
+  Kraft, die nur an diesen Tagen kommt, oder Montag abwählen für jemanden mit
+  festem freien Tag.
+- **Urlaub** (`vacationDates`): der Nutzer trägt die Tage ein, der Automat
+  wählt sie NIE selbst – wer wann frei nimmt, ist eine Absprache im Betrieb.
+  Eingetragene Tage werden beim Planen ausgespart. Beim Klick auf „Dienstplan
+  erstellen" fragt die App noch einmal ab, wer im Monat Urlaub hat.
+  Gerechnet wird in **Arbeitstagen** (§ 3 BUrlG: wer eine Stunde kommt, hat
+  einen ganzen Arbeitstag verbraucht), Anspruch 24 Tage für Stammkräfte und 8
+  für Minijob, geprüft über das ganze **Jahr**. Mehr ist erlaubt – es gibt eine
+  Warnung, keinen Riegel.
 - Max. **9 bezahlte Stunden** pro Tag, **ein Dienst** pro Mitarbeiter und Tag.
 - Höchstens **6 aufeinanderfolgende** Arbeitstage.
 - **Pause** (`calculatePause`), Vorgabe des Betriebs „nach spätestens 4 Stunden

@@ -14,3 +14,6 @@ dist-ssr
 .claude/
 *.tsbuildinfo
 .env*
+
+# Lokale Review-Fixture: wird von der App NICHT geladen.
+public/demo-state.json

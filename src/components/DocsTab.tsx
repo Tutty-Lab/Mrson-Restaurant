@@ -88,6 +88,32 @@ export function DocsTab() {
         <ul className="list-disc pl-5 space-y-1">
           <li>Tối đa <b>9 giờ công</b> mỗi ngày cho một người.</li>
           <li>Mỗi người <b>một ca mỗi ngày</b>.</li>
+          <li>
+            <b>Tối đa 7 nhân viên.</b> Vượt thì app vẫn xếp lịch, chỉ hiện cảnh báo.
+          </li>
+          <li>
+            <b>Minijob: tối đa 10 giờ mỗi TUẦN.</b> Tính theo tuần chứ không phải
+            theo tháng — nếu tính theo tháng thì một tuần 20h vẫn lọt, miễn tuần khác
+            bù lại. Người làm 2 ngày trong tuần thì thành <b>2 ca</b>, giờ chia đều
+            cho các ngày đó chứ không dồn vào một ca dài.
+          </li>
+          <li>
+            <b>Ngày làm cố định trong tuần</b> đặt riêng cho từng người ở tab{" "}
+            <b>Nhân viên</b>. Bỏ trống = làm mọi ngày. Dùng được cả hai chiều: tick
+            đúng T6 và CN cho người chỉ làm hai ngày đó, hoặc bỏ tick T2 cho người
+            nghỉ cố định thứ 2.
+          </li>
+          <li>
+            <b>Ngày nghỉ phép (Urlaub)</b> do <b>người dùng tự chọn</b>, app không tự
+            đặt. Ngày đã chọn sẽ được chừa ra khi xếp ca. Khi bấm <b>Tạo lịch làm
+            việc</b>, app hỏi lại một lượt ai nghỉ ngày nào.
+          </li>
+          <li>
+            Phép tính theo <b>ngày làm việc</b> chứ không theo giờ: đến làm 1 tiếng
+            vẫn tính trọn một ngày. Toàn thời gian và bán thời gian{" "}
+            <b>24 ngày/năm</b>, Minijob <b>8 ngày/năm</b>; vượt thì cảnh báo (nghỉ
+            nhiều hơn luật vẫn được, có thể do hợp đồng hoặc chuyển từ năm trước).
+          </li>
           <li>Không làm quá <b>6 ngày liên tiếp</b>.</li>
           <li>
             Mỗi người phải đạt <b>đúng định mức tháng</b> (Sollstunden) — không thừa, không thiếu.

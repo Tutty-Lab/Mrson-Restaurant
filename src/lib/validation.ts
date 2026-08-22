@@ -2,7 +2,9 @@
 // Validierung des Dienstplans gegen alle geforderten Regeln.
 // ============================================================================
 
+import { vacationDaysInYear, vacationEntitlement } from "./availability";
 import {
+  MAX_EMPLOYEES,
   MAX_MINIJOB_EMPLOYEES,
   MAX_STAMM_EMPLOYEES,
   MINIJOB_MAX_MONTHLY_HOURS,
@@ -40,12 +42,41 @@ const MAX_CONSECUTIVE_DAYS = 6;
 export function validateSchedule(
   employees: Employee[],
   shifts: Shift[],
+  /** Jahr des geplanten Monats – nötig für die Urlaubsprüfung. */
+  year: number = new Date().getFullYear(),
 ): ValidationResult {
   const errors: ValidationError[] = [];
 
   // ── Vorgaben des Betriebs zur Belegschaft ─────────────────────────────────
   // Diese Regeln haengen nicht am Plan, sondern an der Mitarbeiterliste. Sie
   // stehen trotzdem hier, damit ein Verstoss nicht erst beim Lohnbuero auffaellt.
+  // Obergrenze für die GESAMTE Belegschaft. Sie steht neben den beiden Zahlen
+  // darunter, weil der Betrieb beides gesagt hat – erst "höchstens 3 Stamm und
+  // 5 Minijob", später "höchstens 7 Leute". Die jüngere Angabe ist die
+  // schärfere; beide zu prüfen kostet nichts und macht sichtbar, welche greift.
+  if (employees.length > MAX_EMPLOYEES) {
+    errors.push({
+      message: `Quá số nhân viên: ${employees.length} người, tối đa ${MAX_EMPLOYEES}.`,
+    });
+  }
+
+  // Urlaub. Der Anspruch gilt fürs JAHR, geprüft wird deshalb gegen alle
+  // eingetragenen Tage dieses Jahres – nicht nur gegen den geplanten Monat.
+  // Es bleibt eine Warnung: mehr Urlaub als der gesetzliche Mindestanspruch
+  // ist erlaubt, er kann vertraglich vereinbart oder übertragen sein.
+  for (const emp of employees) {
+    const anspruch = vacationEntitlement(emp);
+    const genommen = vacationDaysInYear(emp, year);
+    if (genommen > anspruch) {
+      errors.push({
+        employeeId: emp.id,
+        message:
+          `${emp.name}: đã nghỉ phép ${genommen} ngày trong năm ${year}, ` +
+          `vượt ${anspruch} ngày theo quy định.`,
+      });
+    }
+  }
+
   const stammCount = employees.filter((e) => e.employmentType !== "MINIJOB").length;
   const minijobCount = employees.length - stammCount;
 

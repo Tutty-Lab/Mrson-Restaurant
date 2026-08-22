@@ -16,7 +16,7 @@
 //  - Token-Dauer wird nie verändert  => monatliches Soll bleibt exakt
 // ============================================================================
 
-import type { Employee, Shift } from "../types";
+import { MINIJOB_MAX_WEEKLY_HOURS, type Employee, type Shift } from "../types";
 import {
   DAY_WEIGHTS,
   LATE_SHIFT_RATIOS,
@@ -28,6 +28,8 @@ import {
 import { getShiftTemplate, type TemplateType } from "./shifts";
 import { consecutiveRunLengthWith, seededRandom } from "./consecutive";
 import { presenceFromPaid } from "./time";
+import { weekStartOf } from "./weeks";
+import { mayWorkOn } from "./availability";
 import {
   effectiveWeekdayKey,
   resolveDay,
@@ -63,6 +65,8 @@ type SchedulerState = {
   rawTarget: Map<string, number>; // ISO -> rohes Tages-Soll in Minuten
   dateState: Map<string, DateState>;
   worked: Map<string, Set<string>>; // employeeId -> Set<ISO>
+  /** Mitarbeiter nach id – für Urlaub, feste Wochentage und den Minijob-Deckel. */
+  byId: Map<string, Employee>;
   weekendCount: Map<string, number>; // employeeId -> Anzahl Fr/Sa-Schichten
   remaining: Map<string, number>; // employeeId -> noch zu verplanende Minuten
   shifts: Shift[];
@@ -563,6 +567,54 @@ function applyShift(state: SchedulerState, shift: Shift): void {
  * Platziert genau eine Schicht für einen Mitarbeiter: bestes Datum wählen,
  * Schichtlänge an das Tagesfenster anpassen. Gibt true zurück, wenn platziert.
  */
+/**
+ * Schon verplante Stunden dieser Person in der Kalenderwoche des Datums.
+ *
+ * Der Minijob-Deckel gilt je WOCHE, nicht je Monat. Über den Monat gerechnet
+ * ginge sonst eine Woche mit 20 Stunden durch, solange eine andere leer bleibt
+ * – und genau das verbietet der Betrieb.
+ */
+function weeklyHoursSoFar(state: SchedulerState, employeeId: string, isoDate: string): number {
+  const woche = weekStartOf(isoDate);
+  let minuten = 0;
+  for (const sh of state.shifts) {
+    if (sh.employeeId === employeeId && weekStartOf(sh.date) === woche) minuten += sh.paidMinutes;
+  }
+  return minuten / 60;
+}
+
+/**
+ * Wie viele Stunden darf diese Person an diesem Tag noch bekommen, ohne den
+ * Wochendeckel zu reißen? Unendlich für alle außer Minijob.
+ */
+function weeklyRoomLeft(state: SchedulerState, employee: Employee, isoDate: string): number {
+  if (employee.employmentType !== "MINIJOB") return Number.POSITIVE_INFINITY;
+  return MINIJOB_MAX_WEEKLY_HOURS - weeklyHoursSoFar(state, employee.id, isoDate);
+}
+
+/**
+ * Wie viele Tage DIESER Woche stehen der Person noch offen?
+ *
+ * Gebraucht für den Zuschnitt der Minijob-Schichten. Der Betrieb beschreibt es
+ * so: "arbeitet sie zwei Tage, sind es zwei Dienste". Die zehn Wochenstunden
+ * sollen sich also auf die Tage verteilen, an denen jemand ohnehin kommt, statt
+ * in einem einzigen langen Dienst aufzugehen – ein 9-Stunden-Tag verbraucht die
+ * Woche auf einen Schlag, und der zweite Tag fällt aus.
+ */
+function openDaysThisWeek(state: SchedulerState, employee: Employee, isoDate: string): number {
+  const woche = weekStartOf(isoDate);
+  const worked = state.worked.get(employee.id)!;
+  let n = 0;
+  for (const d of state.dates) {
+    if (weekStartOf(d) !== woche) continue;
+    if (worked.has(d)) continue;
+    if (!mayWorkOn(employee, d)) continue;
+    if (state.dayOf(d).closed) continue;
+    n++;
+  }
+  return n;
+}
+
 function placeOneShift(state: SchedulerState, employee: Employee): boolean {
   const remaining = state.remaining.get(employee.id)!;
   if (remaining <= 0) return false;
@@ -576,6 +628,7 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
   let daysLeft = 0;
   for (const isoDate of state.dates) {
     if (worked.has(isoDate)) continue;
+    if (!mayWorkOn(employee, isoDate)) continue; // Urlaub oder fester freier Tag
     const day = state.dayOf(isoDate);
     if (day.closed) continue;
     if (maxShiftHoursForWindow(windowLength(day)) === 0) continue;
@@ -594,6 +647,7 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
 
   for (const isoDate of state.dates) {
     if (worked.has(isoDate)) continue; // max. ein Dienst pro Tag
+    if (!mayWorkOn(employee, isoDate)) continue; // Urlaub oder fester freier Tag
     const day = state.dayOf(isoDate);
     if (day.closed) continue; // Betriebsruhe -> kein Dienst
 
@@ -603,6 +657,24 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
 
     // Längste Schicht, die ins Fenster passt UND den Rest exakt aufteilbar lässt.
     let maxHours = maxShiftHoursForWindow(windowLength(day));
+
+    // Minijob: der Wochendeckel geht vor. Bleibt in dieser Woche weniger übrig
+    // als die kürzeste Schicht, ist der Tag für diese Person gestorben.
+    const wochenRest = weeklyRoomLeft(state, employee, isoDate);
+    if (wochenRest < 3) continue;
+    maxHours = Math.min(maxHours, Math.floor(wochenRest));
+
+    // Die Wochenstunden auf die offenen Tage dieser Woche aufteilen, statt sie
+    // in einem langen Dienst zu verbrauchen (siehe openDaysThisWeek). Der
+    // Deckel darf nie unter drei Stunden fallen – sonst wäre gar kein Dienst
+    // mehr möglich und die Person käme in dieser Woche überhaupt nicht zum Zug.
+    if (employee.employmentType === "MINIJOB") {
+      const offen = openDaysThisWeek(state, employee, isoDate);
+      if (offen > 1) {
+        const anteil = Math.max(3, Math.ceil(wochenRest / offen));
+        maxHours = Math.min(maxHours, anteil);
+      }
+    }
 
     // Reichen die Stunden des Tages nicht für die volle Abdeckung, ist ZWEI
     // Personen wichtiger als eine lange. Vorher entstanden reihenweise Tage
@@ -759,6 +831,15 @@ function repairDemand(state: SchedulerState, employeesById: Map<string, Employee
       const presence = presenceFromPaid(shift.paidMinutes);
       for (const to of state.dates) {
         if (to === from || worked.has(to)) continue;
+        if (!mayWorkOn(employee, to)) continue; // Urlaub / fester freier Tag
+        // Der Wochendeckel gilt auch beim Verschieben: am Zieltag zählt der
+        // Dienst mit, am Herkunftstag fällt er weg – letzteres aber nur, wenn
+        // beide in derselben Woche liegen.
+        if (employee.employmentType === "MINIJOB") {
+          const schon = weeklyHoursSoFar(state, employee.id, to);
+          const eigenerAnteil = weekStartOf(from) === weekStartOf(to) ? shift.paidMinutes / 60 : 0;
+          if (schon - eigenerAnteil + shift.paidMinutes / 60 > MINIJOB_MAX_WEEKLY_HOURS) continue;
+        }
         const day = state.dayOf(to);
         if (day.closed || windowLength(day) < presence) continue; // geschlossen / passt nicht
         // 6-Tage-Regel prüfen, als ob "from" bereits entfernt wäre.
@@ -837,6 +918,23 @@ function repairDemand(state: SchedulerState, employeesById: Map<string, Employee
  * langer Dienst fehlt, findet unter fremden Diensten oft keinen Spender, wohl
  * aber unter den eigenen Tagen desselben Mitarbeiters.
  */
+/**
+ * Darf dieser Dienst auf dieses Datum? Prüft Urlaub, feste Wochentage und den
+ * Minijob-Wochendeckel – für den Deckel zählt der eigene alte Tag nicht mehr
+ * mit, sofern er in derselben Woche lag.
+ */
+function shiftFitsOn(state: SchedulerState, shift: Shift, neuesDatum: string): boolean {
+  const emp = state.byId.get(shift.employeeId);
+  if (!emp) return true;
+  if (!mayWorkOn(emp, neuesDatum)) return false;
+  if (emp.employmentType !== "MINIJOB") return true;
+
+  const schon = weeklyHoursSoFar(state, emp.id, neuesDatum);
+  const eigenerAnteil =
+    weekStartOf(shift.date) === weekStartOf(neuesDatum) ? shift.paidMinutes / 60 : 0;
+  return schon - eigenerAnteil + shift.paidMinutes / 60 <= MINIJOB_MAX_WEEKLY_HOURS;
+}
+
 function canSwap(state: SchedulerState, a: Shift, b: Shift, allowSameEmployee = false): boolean {
   if (a.date === b.date) return false;
 
@@ -857,6 +955,10 @@ function canSwap(state: SchedulerState, a: Shift, b: Shift, allowSameEmployee = 
     trialB.delete(b.date);
     if (consecutiveRunLengthWith(trialB, a.date) > 6) return false;
   }
+
+  // Urlaub, feste Wochentage und der Minijob-Deckel gelten auch beim Tausch.
+  if (!shiftFitsOn(state, a, b.date)) return false;
+  if (!shiftFitsOn(state, b, a.date)) return false;
 
   // Die getauschten Längen müssen in das jeweilige Fenster passen.
   if (windowLength(state.dayOf(a.date)) < presenceFromPaid(b.paidMinutes)) return false;
@@ -969,6 +1071,12 @@ function trySwaps(state: SchedulerState, employeesById: Map<string, Employee>): 
       const workedB = state.worked.get(empB.id)!;
       // Harte Regel: höchstens ein Dienst pro Mitarbeiter und Tag.
       if (workedA.has(b.date) || workedB.has(a.date)) continue;
+
+      // Diese Funktion prüft alles selbst, statt canSwap zu rufen – Urlaub,
+      // feste Wochentage und der Minijob-Deckel dürfen hier deshalb nicht
+      // fehlen.
+      if (!shiftFitsOn(state, a, b.date)) continue;
+      if (!shiftFitsOn(state, b, a.date)) continue;
 
       // Die getauschten Längen müssen in das jeweilige Fenster passen.
       const dayA = state.dayOf(a.date);
@@ -1439,6 +1547,7 @@ export function generateSchedule(input: GenerateInput): Shift[] {
       rawTarget,
       dateState: new Map(dates.map((d) => [d, { totalPaid: 0, latePaid: 0, count: 0 }])),
       worked: new Map(employees.map((e) => [e.id, new Set<string>()])),
+      byId: new Map(employees.map((e) => [e.id, e] as const)),
       weekendCount: new Map(employees.map((e) => [e.id, 0])),
       remaining: new Map(employees.map((e) => [e.id, e.targetMinutes])),
       shifts: [],
