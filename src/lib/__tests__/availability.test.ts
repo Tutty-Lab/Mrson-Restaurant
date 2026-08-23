@@ -140,3 +140,26 @@ describe("Urlaub", () => {
     expect(result.errors.some((e) => e.message.includes("vượt 8 ngày"))).toBe(true);
   });
 });
+
+describe("Obergrenze der Belegschaft", () => {
+  // Gezählt wird die GESAMTE Belegschaft. Früher gab es zwei getrennte Zahlen
+  // (3 Stammkräfte, 5 Minijobs); der Betrieb hat das auf eine zusammengezogen –
+  // wie sich die Leute auf die Anstellungsarten verteilen, ist seine Sache.
+  const viele = (n: number, type: Employee["employmentType"]) =>
+    Array.from({ length: n }, (_, i) => emp(`${type}-${i}`, type, 30));
+
+  it("warnt erst ab dem achten Kopf", () => {
+    expect(validateSchedule(viele(7, "MINIJOB"), [], YEAR).errors.filter((e) =>
+      e.message.includes("Quá số nhân viên"),
+    )).toEqual([]);
+
+    const zuViele = validateSchedule(viele(8, "MINIJOB"), [], YEAR);
+    expect(zuViele.errors.some((e) => e.message.includes("Quá số nhân viên: 8"))).toBe(true);
+  });
+
+  it("stört sich nicht an der Verteilung der Anstellungsarten", () => {
+    // Sieben Vollzeitkräfte wären früher an der Stamm-Grenze von 3 gescheitert.
+    const nurVollzeit = validateSchedule(viele(7, "VOLLZEIT"), [], YEAR);
+    expect(nurVollzeit.errors.filter((e) => e.message.includes("Quá số"))).toEqual([]);
+  });
+});

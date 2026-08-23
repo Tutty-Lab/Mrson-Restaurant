@@ -16,7 +16,8 @@ export function makeEmployee(
 
 /**
  * Beispielbelegschaft in der Struktur, die der Betrieb vorgibt:
- * höchstens 3 Stammkräfte + 5 Minijobs. Summe = 717 h.
+ * höchstens 7 Beschäftigte insgesamt; wie sie sich auf die Anstellungsarten
+ * verteilen, ist Sache des Betriebs.
  */
 export const SAMPLE_EMPLOYEES: Employee[] = [
   makeEmployee("ST1", "ST1", "VOLLZEIT", 173),

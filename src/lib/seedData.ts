@@ -65,7 +65,7 @@ const MINI_FR_SO = {
   availableWeekdays: ["friday", "sunday"] as WeekdayKey[],
 };
 
-/** Juni 2026 – volle Besetzung: 3 Stammkräfte + 4 Minijobs = 7 Personen. */
+/** Juni 2026 – volle Besetzung: 7 Personen, die erlaubte Höchstzahl. */
 const JUNE_2026: Employee[] = [
   // Fester freier Tag zusätzlich zum Ruhetag des Ladens.
   { ...makeEmployee("st-1", "Stamm 1", "VOLLZEIT", 173), availableWeekdays: ohne("tuesday") },

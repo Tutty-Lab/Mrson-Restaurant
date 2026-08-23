@@ -70,8 +70,11 @@ werden direkt aus den Konstanten gerendert und können daher nicht veralten.
   damit höchstens drei freie Tage im Monat – ein fester freier Wochentag kostet
   vier bis fünf und geht nicht auf. Das ist Arithmetik, kein Fehler des
   Verfahrens.
-- **Höchstens 7 Beschäftigte** (Angabe des Betriebs). Verstoß = Warnung, kein
-  Riegel.
+- **Höchstens 7 Beschäftigte** (Angabe des Betriebs), gezählt wird die GESAMTE
+  Belegschaft. Früher standen dort zwei getrennte Zahlen (3 Stammkräfte, 5
+  Minijobs); der Betrieb hat das auf eine einzige Obergrenze zusammengezogen –
+  wie sich die Leute auf die Anstellungsarten verteilen, ist seine Sache.
+  Verstoß = Warnung, kein Riegel.
 - **Minijob: höchstens 10 Stunden je WOCHE** (`MINIJOB_MAX_WEEKLY_HOURS`).
   Bewusst je Woche geprüft und nicht über den Monat gemittelt – sonst ginge
   eine 20-Stunden-Woche durch, solange eine andere leer bleibt. Arbeitet

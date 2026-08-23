@@ -89,7 +89,9 @@ export function DocsTab() {
           <li>Tối đa <b>9 giờ công</b> mỗi ngày cho một người.</li>
           <li>Mỗi người <b>một ca mỗi ngày</b>.</li>
           <li>
-            <b>Tối đa 7 nhân viên.</b> Vượt thì app vẫn xếp lịch, chỉ hiện cảnh báo.
+            <b>Tối đa 7 nhân viên</b> — tính <b>tổng số người</b>, không phân biệt thợ
+            chính hay Minijob. Chia thế nào là quyền của quán. Vượt thì app vẫn xếp lịch,
+            chỉ hiện cảnh báo.
           </li>
           <li>
             <b>Minijob: tối đa 10 giờ mỗi TUẦN.</b> Tính theo tuần chứ không phải

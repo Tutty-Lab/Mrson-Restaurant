@@ -5,8 +5,6 @@
 import { vacationDaysInYear, vacationEntitlement } from "./availability";
 import {
   MAX_EMPLOYEES,
-  MAX_MINIJOB_EMPLOYEES,
-  MAX_STAMM_EMPLOYEES,
   MINIJOB_MAX_MONTHLY_HOURS,
   MINIJOB_MAX_WEEKLY_HOURS,
   type Employee,
@@ -50,10 +48,10 @@ export function validateSchedule(
   // ── Vorgaben des Betriebs zur Belegschaft ─────────────────────────────────
   // Diese Regeln haengen nicht am Plan, sondern an der Mitarbeiterliste. Sie
   // stehen trotzdem hier, damit ein Verstoss nicht erst beim Lohnbuero auffaellt.
-  // Obergrenze für die GESAMTE Belegschaft. Sie steht neben den beiden Zahlen
-  // darunter, weil der Betrieb beides gesagt hat – erst "höchstens 3 Stamm und
-  // 5 Minijob", später "höchstens 7 Leute". Die jüngere Angabe ist die
-  // schärfere; beide zu prüfen kostet nichts und macht sichtbar, welche greift.
+  // Obergrenze für die GESAMTE Belegschaft. Früher wurde getrennt gezählt
+  // (höchstens 3 Stammkräfte, höchstens 5 Minijobs); der Betrieb hat das auf
+  // eine einzige Zahl zusammengezogen. Wie sich die sieben Leute auf die
+  // Anstellungsarten verteilen, ist seine Sache.
   if (employees.length > MAX_EMPLOYEES) {
     errors.push({
       message: `Quá số nhân viên: ${employees.length} người, tối đa ${MAX_EMPLOYEES}.`,
@@ -77,19 +75,6 @@ export function validateSchedule(
     }
   }
 
-  const stammCount = employees.filter((e) => e.employmentType !== "MINIJOB").length;
-  const minijobCount = employees.length - stammCount;
-
-  if (stammCount > MAX_STAMM_EMPLOYEES) {
-    errors.push({
-      message: `Quá số thợ chính: ${stammCount} người, tối đa ${MAX_STAMM_EMPLOYEES}.`,
-    });
-  }
-  if (minijobCount > MAX_MINIJOB_EMPLOYEES) {
-    errors.push({
-      message: `Quá số Minijob: ${minijobCount} người, tối đa ${MAX_MINIJOB_EMPLOYEES}.`,
-    });
-  }
   for (const emp of employees) {
     if (emp.employmentType !== "MINIJOB") continue;
     const hours = emp.targetMinutes / 60;
@@ -102,6 +87,7 @@ export function validateSchedule(
       });
     }
   }
+
   const shiftsByEmployee = new Map<string, Shift[]>();
   for (const emp of employees) shiftsByEmployee.set(emp.id, []);
   for (const shift of shifts) {
