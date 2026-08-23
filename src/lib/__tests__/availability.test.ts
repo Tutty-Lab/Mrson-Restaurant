@@ -16,6 +16,7 @@ import { DEFAULT_WORK_HOURS } from "../workHours";
 import { weekStartOf } from "../weeks";
 import { parseIsoDate, weekdayKeyOf } from "../demand";
 import { MINIJOB_MAX_WEEKLY_HOURS, type Employee } from "../../types";
+import { SEED_MONTHS } from "../seedData";
 
 const YEAR = 2026;
 const MONTH = 8;
@@ -161,5 +162,93 @@ describe("Obergrenze der Belegschaft", () => {
     // Sieben Vollzeitkräfte wären früher an der Stamm-Grenze von 3 gescheitert.
     const nurVollzeit = validateSchedule(viele(7, "VOLLZEIT"), [], YEAR);
     expect(nurVollzeit.errors.filter((e) => e.message.includes("Quá số"))).toEqual([]);
+  });
+});
+
+describe("Höchstzahl der Arbeitstage je Woche", () => {
+  // Etwas anderes als availableWeekdays: dort steht, WELCHE Tage möglich sind,
+  // hier, wie viele davon genutzt werden dürfen.
+  const fuenfTage = emp("st-1", "VOLLZEIT", 150, { maxDaysPerWeek: 5 });
+  const shifts = plane([fuenfTage, emp("st-2", "VOLLZEIT", 150), emp("mj-1", "MINIJOB", 31)]);
+
+  it("hält die Grenze in JEDER Kalenderwoche ein", () => {
+    const proWoche = new Map<string, number>();
+    for (const s of shifts.filter((x) => x.employeeId === fuenfTage.id)) {
+      const wk = weekStartOf(s.date);
+      proWoche.set(wk, (proWoche.get(wk) ?? 0) + 1);
+    }
+    const drueber = [...proWoche].filter(([, n]) => n > 5);
+    expect(drueber).toEqual([]);
+  });
+
+  it("trifft das Monats-Soll trotzdem exakt", () => {
+    const summe = shifts
+      .filter((s) => s.employeeId === fuenfTage.id)
+      .reduce((a, s) => a + s.paidMinutes, 0);
+    expect(summe).toBe(fuenfTage.targetMinutes);
+  });
+});
+
+describe("Soll mit Nachkommastelle", () => {
+  it("wird gemeldet, statt lautlos null Dienste zu ergeben", () => {
+    // 172,7 h lassen sich aus ganzen Stunden nicht zusammensetzen. Vorher
+    // bekam die Kraft schlicht keine einzige Schicht, und nirgends stand warum.
+    const krumm = emp("st-1", "VOLLZEIT", 0, { targetMinutes: Math.round(172.7 * 60) });
+    const result = validateSchedule([krumm], [], YEAR);
+    expect(result.errors.some((e) => e.message.includes("không phải số giờ chẵn"))).toBe(true);
+    expect(result.errors.some((e) => e.message.includes("173h"))).toBe(true);
+  });
+
+  it("lässt ganze Stunden in Ruhe", () => {
+    const glatt = emp("st-1", "VOLLZEIT", 173);
+    const result = validateSchedule([glatt], [], YEAR);
+    expect(result.errors.filter((e) => e.message.includes("giờ chẵn"))).toEqual([]);
+  });
+});
+
+describe("Vier Sonntage reichen für die Sonntags-Kräfte nicht", () => {
+  // Der Betrieb setzt zwei Minijob-Kräfte auf 43 h im Monat und ausschließlich
+  // auf den Sonntag. Bei höchstens 9 Stunden am Tag sind vier Sonntage 36 h.
+  // Nur ein Monat mit fünf Sonntagen trägt das Soll. Das ist Arithmetik und
+  // kein Fehler des Verfahrens – der Test hält es fest, damit die Zahl später
+  // nicht als Fehler gemeldet wird.
+  //
+  // Geprüft wird mit der ECHTEN Belegschaft. Mit zwei erfundenen Personen käme
+  // etwas anderes heraus: dann ist die Stundensumme des Monats so klein, dass
+  // schon die Tagesverteilung die Schichten kurz hält, und die Zahl sagt nichts
+  // mehr über den Sonntag aus.
+  const belegschaft = () => SEED_MONTHS[0].employees.map((e) => ({ ...e }));
+
+  it("meldet den Fehlbetrag, statt einen falschen Plan zu liefern", () => {
+    let message = "";
+    try {
+      // Juni 2026 hat vier Sonntage.
+      generateSchedule({
+        year: 2026,
+        month: 6,
+        workHours: DEFAULT_WORK_HOURS,
+        employees: belegschaft(),
+      });
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toContain("36h / 43h");
+  });
+
+  it("geht in einem Monat mit fünf Sonntagen auf", () => {
+    // August 2026 hat fünf Sonntage.
+    const employees = belegschaft();
+    const plan = generateSchedule({
+      year: 2026,
+      month: 8,
+      workHours: DEFAULT_WORK_HOURS,
+      employees,
+    });
+    for (const e of employees) {
+      const summe = plan
+        .filter((s) => s.employeeId === e.id)
+        .reduce((a, s) => a + s.paidMinutes, 0);
+      expect(`${e.name}: ${summe}`).toBe(`${e.name}: ${e.targetMinutes}`);
+    }
   });
 });

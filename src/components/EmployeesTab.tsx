@@ -313,6 +313,31 @@ function EmployeeRules({
             );
           })}
         </div>
+
+        {/*
+          Zwei verschiedene Dinge: oben WELCHE Tage möglich sind, hier WIE VIELE
+          davon genutzt werden. Wer sechs mögliche Tage hat, aber nur fünf
+          arbeitet, braucht diese Zahl – ohne sie plant die App alle sechs.
+        */}
+        <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+          Số ngày làm mỗi tuần
+          <input
+            type="number"
+            min={1}
+            max={7}
+            disabled={isLocked}
+            placeholder="—"
+            value={emp.maxDaysPerWeek ?? ""}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              updateEmployee(emp.id, {
+                maxDaysPerWeek: e.target.value === "" || n < 1 ? undefined : Math.min(7, Math.round(n)),
+              });
+            }}
+            className={`${inputClass} w-16 ${gesperrt}`}
+          />
+          <span className="text-slate-400">bỏ trống = không giới hạn</span>
+        </label>
       </div>
 
       <div>

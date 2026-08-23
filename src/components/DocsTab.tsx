@@ -104,6 +104,12 @@ export function DocsTab() {
             <b>Nhân viên</b>. Bỏ trống = làm mọi ngày. Dùng được cả hai chiều: tick
             đúng T6 và CN cho người chỉ làm hai ngày đó, hoặc bỏ tick T2 cho người
             nghỉ cố định thứ 2.
+          </li>
+          <li>
+            <b>Số ngày làm mỗi tuần</b> là chuyện khác với ô tick ở trên: ô tick nói{" "}
+            <b>được làm thứ mấy</b>, còn số này nói <b>làm mấy ngày</b> trong số đó.
+            Ai có 6 ngày làm được nhưng hợp đồng chỉ 5 ngày thì điền 5. Bỏ trống thì
+            chỉ còn luật tối đa 6 ngày liên tiếp.
             <br />
             <span className="text-slate-500">
               Lưu ý: định mức tháng quyết định có đủ chỗ cho ngày nghỉ cố định hay

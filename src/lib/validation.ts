@@ -58,6 +58,20 @@ export function validateSchedule(
     });
   }
 
+  // Ein Soll mit Nachkommastelle lässt sich nicht planen: die Schichten sind
+  // ganze Stunden, und daraus entsteht nie eine halbe. Ohne diesen Hinweis
+  // bekommt die Kraft schlicht null Dienste, und niemand sieht warum.
+  for (const emp of employees) {
+    if (emp.targetMinutes % 60 === 0) continue;
+    errors.push({
+      employeeId: emp.id,
+      message:
+        `${emp.name}: định mức ${(emp.targetMinutes / 60).toFixed(2)}h không phải số giờ chẵn. ` +
+        `Ca chỉ tính theo giờ chẵn nên không xếp được — hãy làm tròn thành ` +
+        `${Math.round(emp.targetMinutes / 60)}h.`,
+    });
+  }
+
   // Urlaub. Der Anspruch gilt fürs JAHR, geprüft wird deshalb gegen alle
   // eingetragenen Tage dieses Jahres – nicht nur gegen den geplanten Monat.
   // Es bleibt eine Warnung: mehr Urlaub als der gesetzliche Mindestanspruch

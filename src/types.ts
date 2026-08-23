@@ -74,6 +74,18 @@ export type Employee = {
    */
   availableWeekdays?: WeekdayKey[];
   /**
+   * Höchstzahl der Arbeitstage je Woche.
+   *
+   * Etwas anderes als availableWeekdays: dort steht, WELCHE Tage in Frage
+   * kommen, hier, WIE VIELE davon genutzt werden dürfen. Der Betrieb nennt
+   * beides – "arbeitet Sonntag und Freitag" ist das eine, "arbeitet 5 Tage die
+   * Woche" das andere, und wer sechs mögliche Tage hat, aber nur fünf davon
+   * arbeitet, braucht diese Zahl.
+   *
+   * Fehlt das Feld, begrenzt nur die Sechs-Tage-Regel des Gesetzes.
+   */
+  maxDaysPerWeek?: number;
+  /**
    * Urlaubstage als ISO-Daten "yyyy-MM-dd", über das GANZE Jahr.
    *
    * Bewusst das ganze Jahr und nicht nur der geplante Monat: der Anspruch ist
