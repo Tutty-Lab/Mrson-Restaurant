@@ -83,7 +83,11 @@ werden direkt aus den Konstanten gerendert und können daher nicht veralten.
   festem freien Tag.
 - **Urlaub** (`vacationDates`): der Nutzer trägt die Tage ein, der Automat
   wählt sie NIE selbst – wer wann frei nimmt, ist eine Absprache im Betrieb.
-  Eingetragene Tage werden beim Planen ausgespart. Beim Klick auf „Dienstplan
+  Eingetragene Tage werden beim Planen ausgespart. Ausgewählt wird über eine
+  Liste der Monatstage zum Ankreuzen (`VacationPicker`), mit dem Wochentag in
+  derselben Zeile; geschlossene Tage sind gesperrt. Vorher stand dort ein
+  `<input type="date">`, bei dem jeder einzelne Tag neu im Browser-Kalender
+  gesucht werden musste. Beim Klick auf „Dienstplan
   erstellen" fragt die App noch einmal ab, wer im Monat Urlaub hat.
   Gerechnet wird in **Arbeitstagen** (§ 3 BUrlG: wer eine Stunde kommt, hat
   einen ganzen Arbeitstag verbraucht), Anspruch 24 Tage für Stammkräfte und 8

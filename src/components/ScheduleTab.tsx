@@ -17,6 +17,7 @@ import { signedHours } from "../lib/dateFormat";
 import { monthLabel } from "../lib/shiftOps";
 import { isDayClosed } from "../lib/workHours";
 import { publicHolidays } from "../lib/holidays";
+import { VacationPicker } from "./VacationPicker";
 import { ShiftCellEditor } from "./ShiftCellEditor";
 import { ScheduleDayView } from "./ScheduleDayView";
 import { weeksOfMonth } from "../lib/weeks";
@@ -122,6 +123,7 @@ export function ScheduleTab({ store }: { store: UseScheduleReturn }) {
           year={schedule.year}
           month={schedule.month}
           updateEmployee={updateEmployee}
+          isClosed={(iso) => closedByDate.has(iso)}
           onCancel={() => setUrlaubOffen(false)}
           onConfirm={() => {
             setUrlaubOffen(false);
@@ -433,6 +435,7 @@ function UrlaubDialog({
   year,
   month,
   updateEmployee,
+  isClosed,
   onCancel,
   onConfirm,
 }: {
@@ -440,21 +443,16 @@ function UrlaubDialog({
   year: number;
   month: number;
   updateEmployee: (id: string, patch: Partial<Employee>) => void;
+  isClosed: (iso: string) => boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const monatsStart = `${year}-${String(month).padStart(2, "0")}-01`;
-  const monatsEnde = `${year}-${String(month).padStart(2, "0")}-${String(
-    new Date(year, month, 0).getDate(),
-  ).padStart(2, "0")}`;
-
-  const addUrlaub = (emp: Employee, iso: string) => {
-    if (!iso || (emp.vacationDates ?? []).includes(iso)) return;
-    updateEmployee(emp.id, { vacationDates: [...(emp.vacationDates ?? []), iso].sort() });
-  };
-  const removeUrlaub = (emp: Employee, iso: string) => {
+  const toggleUrlaub = (emp: Employee, iso: string) => {
+    const jetzt = emp.vacationDates ?? [];
     updateEmployee(emp.id, {
-      vacationDates: (emp.vacationDates ?? []).filter((d) => d !== iso),
+      vacationDates: jetzt.includes(iso)
+        ? jetzt.filter((d) => d !== iso)
+        : [...jetzt, iso].sort(),
     });
   };
 
@@ -487,26 +485,20 @@ function UrlaubDialog({
                     {zuViel && " ⚠ vượt quy định"}
                   </span>
                 </div>
-                <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                  {imMonat.map((iso) => (
-                    <button
-                      key={iso}
-                      type="button"
-                      onClick={() => removeUrlaub(emp, iso)}
-                      title="Bấm để bỏ ngày này"
-                      className="rounded border border-amber-200 bg-amber-100 px-2 py-1 text-xs text-amber-800 hover:bg-amber-200"
-                    >
-                      {iso.slice(8)}.{iso.slice(5, 7)} ✕
-                    </button>
-                  ))}
-                  <input
-                    type="date"
-                    min={monatsStart}
-                    max={monatsEnde}
-                    value=""
-                    onChange={(e) => addUrlaub(emp, e.target.value)}
-                    className="rounded border border-slate-300 px-2 py-1 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                <div className="mt-1.5">
+                  <VacationPicker
+                    year={year}
+                    month={month}
+                    selected={emp.vacationDates ?? []}
+                    onToggle={(iso) => toggleUrlaub(emp, iso)}
+                    isClosed={isClosed}
                   />
+                  {imMonat.length > 0 && (
+                    <div className="mt-1 text-xs text-slate-500">
+                      Đã chọn:{" "}
+                      {imMonat.map((iso) => `${Number(iso.slice(8))}.${iso.slice(5, 7)}`).join(", ")}
+                    </div>
+                  )}
                 </div>
               </div>
             );

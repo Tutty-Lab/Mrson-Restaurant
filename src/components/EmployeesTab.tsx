@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { UseScheduleReturn } from "../hooks/useSchedule";
 import type { Employee, EmploymentType } from "../types";
 import { splitTargetHours } from "../lib/splitTargetHours";
+import { VacationPicker } from "./VacationPicker";
+import { isDayClosed } from "../lib/workHours";
+import { publicHolidays } from "../lib/holidays";
 import {
   WEEKDAY_SHORT_VI,
   type WeekdayKey,
@@ -43,6 +46,18 @@ function splitInfo(targetHours: number, type: EmploymentType): { ok: boolean; te
 
 export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
   const { schedule, addEmployee, updateEmployee, removeEmployee } = store;
+  // Geschlossene Tage sind im Urlaubskalender nicht wählbar: an einem Tag, an
+  // dem der Laden ohnehin zu hat, verbraucht niemand einen Urlaubstag.
+  const holidays = useMemo(() => publicHolidays(schedule.year), [schedule.year]);
+  const overrides = useMemo(
+    () => Object.fromEntries(schedule.dateOverrides.map((o) => [o.date, o])),
+    [schedule.dateOverrides],
+  );
+  const isClosed = useCallback(
+    (iso: string) => isDayClosed(schedule.workHours, iso, holidays, overrides),
+    [schedule.workHours, holidays, overrides],
+  );
+
   const [name, setName] = useState("");
   const [type, setType] = useState<EmploymentType>("VOLLZEIT");
   const [hours, setHours] = useState(176);
@@ -151,19 +166,7 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
                     <span className="text-slate-400">h</span>
                   </div>
                 </label>
-                <label className="flex items-center gap-2 sm:pb-1.5 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={emp.saved === true}
-                    onChange={(e) => updateEmployee(emp.id, { saved: e.target.checked })}
-                    className="h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                  />
-                  <span
-                    className={`text-sm ${emp.saved ? "text-emerald-700 font-medium" : "text-slate-500"}`}
-                  >
-                    Lưu
-                  </span>
-                </label>
+
                 <div className="flex items-center justify-between sm:flex-col sm:items-end sm:justify-end gap-1 sm:w-24">
                   <span className={`text-xs ${info.ok ? "text-slate-500" : "text-rose-600"}`}>
                     {info.text}
@@ -190,6 +193,7 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
                   year={schedule.year}
                   month={schedule.month}
                   updateEmployee={updateEmployee}
+                  isClosed={isClosed}
                 />
               </div>
             );
@@ -211,13 +215,17 @@ function EmployeeRules({
   year,
   month,
   updateEmployee,
+  isClosed,
 }: {
   emp: Employee;
   year: number;
   month: number;
   updateEmployee: (id: string, patch: Partial<Employee>) => void;
+  isClosed: (iso: string) => boolean;
 }) {
-  const [neuerTag, setNeuerTag] = useState("");
+  // Die Liste ist eingeklappt, solange niemand sie braucht. Sieben
+  // Mitarbeiter mal einunddreißig Zeilen wären sonst eine sehr lange Seite.
+  const [kalenderOffen, setKalenderOffen] = useState(false);
 
   const gewaehlt = emp.availableWeekdays ?? [];
   const alleTage = gewaehlt.length === 0;
@@ -242,24 +250,15 @@ function EmployeeRules({
   const imMonat = vacationDatesInMonth(emp, year, month);
   const zuViel = urlaubJahr > anspruch;
 
-  const addUrlaub = (iso: string) => {
-    if (!iso || (emp.vacationDates ?? []).includes(iso)) return;
+  const toggleUrlaub = (iso: string) => {
+    const jetzt = emp.vacationDates ?? [];
     updateEmployee(emp.id, {
-      vacationDates: [...(emp.vacationDates ?? []), iso].sort(),
-    });
-    setNeuerTag("");
-  };
-
-  const removeUrlaub = (iso: string) => {
-    updateEmployee(emp.id, {
-      vacationDates: (emp.vacationDates ?? []).filter((d) => d !== iso),
+      vacationDates: jetzt.includes(iso)
+        ? jetzt.filter((d) => d !== iso)
+        : [...jetzt, iso].sort(),
     });
   };
 
-  const monatsStart = `${year}-${String(month).padStart(2, "0")}-01`;
-  const monatsEnde = `${year}-${String(month).padStart(2, "0")}-${String(
-    new Date(year, month, 0).getDate(),
-  ).padStart(2, "0")}`;
 
   return (
     <div className="border-t border-slate-100 pt-3 grid gap-3 sm:grid-cols-2">
@@ -297,33 +296,31 @@ function EmployeeRules({
             {zuViel && " ⚠ vượt quy định"}
           </span>
         </div>
-        <div className="flex flex-wrap items-center gap-1">
-          {imMonat.map((iso) => (
-            <button
-              key={iso}
-              type="button"
-              onClick={() => removeUrlaub(iso)}
-              title="Bấm để bỏ ngày này"
-              className="rounded bg-amber-100 text-amber-800 border border-amber-200 px-2 py-1 text-xs hover:bg-amber-200"
-            >
-              {iso.slice(8)}.{iso.slice(5, 7)} ✕
-            </button>
-          ))}
-          <input
-            type="date"
-            min={monatsStart}
-            max={monatsEnde}
-            value={neuerTag}
-            onChange={(e) => {
-              setNeuerTag(e.target.value);
-              addUrlaub(e.target.value);
-            }}
-            className={`${inputClass} w-[9.5rem]`}
-          />
-        </div>
-        {imMonat.length === 0 && (
-          <div className="text-xs text-slate-400 mt-1">
-            Chưa có ngày nghỉ nào trong tháng này.
+
+        <button
+          type="button"
+          onClick={() => setKalenderOffen((o) => !o)}
+          className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+        >
+          {kalenderOffen ? "Đóng danh sách" : "Chọn ngày nghỉ"}
+          {imMonat.length > 0 && ` · ${imMonat.length} ngày trong tháng`}
+        </button>
+
+        {!kalenderOffen && imMonat.length > 0 && (
+          <div className="mt-1 text-xs text-slate-500">
+            {imMonat.map((iso) => `${Number(iso.slice(8))}.${iso.slice(5, 7)}`).join(", ")}
+          </div>
+        )}
+
+        {kalenderOffen && (
+          <div className="mt-2">
+            <VacationPicker
+              year={year}
+              month={month}
+              selected={emp.vacationDates ?? []}
+              onToggle={toggleUrlaub}
+              isClosed={isClosed}
+            />
           </div>
         )}
       </div>

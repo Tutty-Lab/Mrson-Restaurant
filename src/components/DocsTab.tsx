@@ -113,8 +113,11 @@ export function DocsTab() {
           </li>
           <li>
             <b>Ngày nghỉ phép (Urlaub)</b> do <b>người dùng tự chọn</b>, app không tự
-            đặt. Ngày đã chọn sẽ được chừa ra khi xếp ca. Khi bấm <b>Tạo lịch làm
-            việc</b>, app hỏi lại một lượt ai nghỉ ngày nào.
+            đặt. Bấm <b>Chọn ngày nghỉ</b> ở tab <b>Nhân viên</b> để mở danh sách các
+            ngày trong tháng kèm thứ, rồi tick vào ngày muốn nghỉ. Ngày quán đóng cửa bị
+            khoá vì hôm đó không ai phải xin nghỉ. Ngày đã tick sẽ được chừa ra khi xếp
+            ca. Khi bấm <b>Tạo lịch làm việc</b>, app mở lại đúng danh sách đó để rà một
+            lượt trước khi xếp.
           </li>
           <li>
             Phép tính theo <b>ngày làm việc</b> chứ không theo giờ: đến làm 1 tiếng

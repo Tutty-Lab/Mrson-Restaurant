@@ -67,12 +67,6 @@ export type Employee = {
   /** Monatliches Soll in Minuten (Integer). 176 h => 10560. */
   targetMinutes: number;
   /**
-   * Häkchen „Lưu" in der Mitarbeiterliste: vom Nutzer gesetzte Bestätigung,
-   * dass die Daten dieser Person geprüft und übernommen sind. Rein als Merker
-   * gedacht – auf die Planung hat das Feld keinen Einfluss.
-   */
-  saved?: boolean;
-  /**
    * Wochentage, an denen diese Person überhaupt eingeplant werden darf.
    *
    * Fehlt das Feld oder ist es leer, gilt: jeder Tag ist möglich. Damit deckt
