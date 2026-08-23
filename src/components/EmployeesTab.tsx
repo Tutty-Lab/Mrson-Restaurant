@@ -25,6 +25,10 @@ const WEEKDAY_ORDER: WeekdayKey[] = [
   "sunday",
 ];
 
+/** Zusatzklassen für gesperrte Felder – ein Feld, das aussieht wie immer, aber
+ *  keine Eingabe annimmt, ist schlimmer als ein sichtbar graues. */
+const gesperrt = "disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed";
+
 const inputClass =
   "rounded border border-slate-300 px-2 py-1 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500";
 
@@ -45,7 +49,7 @@ function splitInfo(targetHours: number, type: EmploymentType): { ok: boolean; te
 }
 
 export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
-  const { schedule, addEmployee, updateEmployee, removeEmployee } = store;
+  const { schedule, addEmployee, updateEmployee, removeEmployee, isLocked } = store;
   // Geschlossene Tage sind im Urlaubskalender nicht wählbar: an einem Tag, an
   // dem der Laden ohnehin zu hat, verbraucht niemand einen Urlaubstag.
   const holidays = useMemo(() => publicHolidays(schedule.year), [schedule.year]);
@@ -66,12 +70,26 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
     <section className="rounded-lg bg-white border border-slate-200 p-4 sm:p-5 shadow-sm">
       <h2 className="text-base font-semibold text-slate-900 mb-4">Nhân viên</h2>
 
+      {/*
+        Ohne diesen Hinweis ist der Tab eine Falle: bei gesperrtem Monat nehmen
+        addEmployee, updateEmployee und removeEmployee die Änderung stillschweigend
+        nicht an. Man klickt auf "Xoá", nichts passiert, und nirgends steht warum.
+      */}
+      {isLocked && (
+        <div className="mb-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <b>Tháng này đã khoá</b> vì lịch đã được in. Không thêm, sửa hay xoá được
+          nhân viên. Muốn sửa thì mở khoá ở tab <b>Bảng chấm công</b>, sửa xong nhớ{" "}
+          <b>in lại tuần đó và thay bản cũ</b>.
+        </div>
+      )}
+
       {/* Thêm nhân viên mới */}
       <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3 mb-5 rounded bg-slate-50 border border-slate-200 p-3">
         <label className="flex flex-col sm:flex-1 sm:min-w-[140px]">
           <span className="text-xs text-slate-600 mb-1">Tên</span>
           <input
-            className={`${inputClass} w-full`}
+            disabled={isLocked}
+            className={`${inputClass} w-full ${gesperrt}`}
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Tên nhân viên"
@@ -101,6 +119,7 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
           />
         </label>
         <button
+          disabled={isLocked}
           onClick={() => {
             addEmployee(name, type, hours);
             setName("");
@@ -127,7 +146,8 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
                 <label className="flex flex-col sm:flex-1">
                   <span className="text-xs text-slate-500 mb-1 sm:hidden">Tên</span>
                   <input
-                    className={`${inputClass} w-full`}
+                    disabled={isLocked}
+                    className={`${inputClass} w-full ${gesperrt}`}
                     value={emp.name}
                     onChange={(e) => updateEmployee(emp.id, { name: e.target.value })}
                   />
@@ -135,7 +155,8 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
                 <label className="flex flex-col sm:w-40">
                   <span className="text-xs text-slate-500 mb-1 sm:hidden">Hình thức</span>
                   <select
-                    className={`${inputClass} w-full`}
+                    disabled={isLocked}
+                    className={`${inputClass} w-full ${gesperrt}`}
                     value={emp.employmentType}
                     onChange={(e) =>
                       updateEmployee(emp.id, {
@@ -155,7 +176,8 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
                       type="number"
                       min={0}
                       step={1}
-                      className={`${inputClass} w-full`}
+                      disabled={isLocked}
+                      className={`${inputClass} w-full ${gesperrt}`}
                       value={emp.targetMinutes / 60}
                       onChange={(e) =>
                         updateEmployee(emp.id, {
@@ -180,8 +202,9 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
                     </span>
                   )}
                   <button
+                    disabled={isLocked}
                     onClick={() => removeEmployee(emp.id)}
-                    className="text-rose-600 hover:text-rose-800 text-sm font-medium"
+                    className="text-rose-600 hover:text-rose-800 text-sm font-medium disabled:text-slate-300 disabled:hover:text-slate-300"
                   >
                     Xoá
                   </button>
@@ -194,6 +217,7 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
                   month={schedule.month}
                   updateEmployee={updateEmployee}
                   isClosed={isClosed}
+                  isLocked={isLocked}
                 />
               </div>
             );
@@ -216,12 +240,14 @@ function EmployeeRules({
   month,
   updateEmployee,
   isClosed,
+  isLocked,
 }: {
   emp: Employee;
   year: number;
   month: number;
   updateEmployee: (id: string, patch: Partial<Employee>) => void;
   isClosed: (iso: string) => boolean;
+  isLocked: boolean;
 }) {
   // Die Liste ist eingeklappt, solange niemand sie braucht. Sieben
   // Mitarbeiter mal einunddreißig Zeilen wären sonst eine sehr lange Seite.
@@ -274,6 +300,7 @@ function EmployeeRules({
               <button
                 key={key}
                 type="button"
+                disabled={isLocked}
                 onClick={() => toggleWeekday(key)}
                 className={`rounded px-2 py-1 text-xs border transition-colors ${
                   an
@@ -299,6 +326,7 @@ function EmployeeRules({
 
         <button
           type="button"
+          disabled={isLocked}
           onClick={() => setKalenderOffen((o) => !o)}
           className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
         >
