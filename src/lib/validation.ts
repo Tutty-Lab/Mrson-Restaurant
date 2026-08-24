@@ -17,6 +17,16 @@ export type ValidationError = {
   employeeId?: string;
   date?: string;
   message: string;
+  /**
+   * "error" = der Plan ist unzulässig und muss korrigiert werden.
+   * "warning" = der Plan ist benutzbar, etwas passt nur nicht ideal.
+   *
+   * Ein zu hohes Monats-Soll ist eine WARNUNG: der Plan bleibt gültig, es
+   * fehlen nur Stunden, die der Monat gar nicht hergibt. Das als Fehler zu
+   * führen hieße, dem Betrieb einen brauchbaren Plan vorzuenthalten, weil eine
+   * Zahl in der Mitarbeiterliste zu groß ist.
+   */
+  severity?: "error" | "warning";
 };
 
 export type EmployeeSummary = {
@@ -169,9 +179,15 @@ export function validateSchedule(
     const maxRun = maxConsecutiveRun(empShifts.map((s) => s.date));
 
     if (assignedMinutes !== emp.targetMinutes) {
+      const zuWenig = assignedMinutes < emp.targetMinutes;
       errors.push({
         employeeId: emp.id,
-        message: `${emp.name}: chưa đạt giờ định mức: ${assignedMinutes / 60} h thay vì ${emp.targetMinutes / 60} h.`,
+        // Zu WENIG verteilt heißt: der Monat gibt nicht mehr her – Warnung.
+        // Zu VIEL wäre ein echter Fehler im Plan.
+        severity: zuWenig ? "warning" : "error",
+        message: zuWenig
+          ? `${emp.name}: mới xếp được ${assignedMinutes / 60}h / ${emp.targetMinutes / 60}h — tháng này không đủ ngày cho định mức đó.`
+          : `${emp.name}: xếp quá giờ định mức: ${assignedMinutes / 60} h thay vì ${emp.targetMinutes / 60} h.`,
       });
     }
     if (maxRun > MAX_CONSECUTIVE_DAYS) {
@@ -191,5 +207,8 @@ export function validateSchedule(
     });
   }
 
-  return { valid: errors.length === 0, errors, summaries };
+  // Warnungen machen den Plan nicht ungültig – sonst blockiert eine zu große
+  // Zahl in der Mitarbeiterliste das Drucken eines sonst brauchbaren Plans.
+  const echteFehler = errors.filter((e) => e.severity !== "warning");
+  return { valid: echteFehler.length === 0, errors, summaries };
 }

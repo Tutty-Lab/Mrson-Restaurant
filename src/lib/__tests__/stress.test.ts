@@ -15,14 +15,26 @@ const mk = (id: string, type: Employee["employmentType"], hours: number): Employ
 });
 
 /** Prüft alle harten Regeln, die der Scheduler laut Kopfkommentar zusichert. */
-function audit(shifts: Shift[], employees: Employee[], year: number, overrides: OverrideMap = {}) {
+function audit(
+  shifts: Shift[],
+  employees: Employee[],
+  year: number,
+  overrides: OverrideMap = {},
+  /**
+   * true = ein FEHLBETRAG ist erlaubt (der Monat gibt das Soll nicht her).
+   * Zu VIEL verteilte Zeit bleibt in jedem Fall ein Fehler.
+   */
+  fehlbetragErlaubt = false,
+) {
   const problems: string[] = [];
   const holidays = publicHolidays(year);
 
   // 1. Monats-Soll exakt getroffen
   for (const e of employees) {
     const sum = shifts.filter((s) => s.employeeId === e.id).reduce((a, s) => a + s.paidMinutes, 0);
-    if (sum !== e.targetMinutes) {
+    if (sum > e.targetMinutes) {
+      problems.push(`${e.id}: xếp quá ${sum / 60}h / ${e.targetMinutes / 60}h`);
+    } else if (sum < e.targetMinutes && !fehlbetragErlaubt) {
       problems.push(`${e.id}: ${sum / 60}h thay vì ${e.targetMinutes / 60}h`);
     }
   }
@@ -128,11 +140,12 @@ describe("Scheduler: định mức cao ép sát số ngày trong tháng", () => 
           employees: c.emps,
         });
       } catch (err) {
-        // Từ chối thẳng cũng là hành vi đúng – miễn là không tạo lịch sai.
+        // Nur noch bei unmöglicher Eingabe – ein Fehlbetrag allein bricht nicht ab.
         expect(err).toBeInstanceOf(Error);
         return;
       }
-      expect(audit(shifts, c.emps, c.year)).toEqual([]);
+      // Alle harten Regeln müssen stehen; nur der Fehlbetrag ist erlaubt.
+      expect(audit(shifts, c.emps, c.year, {}, true)).toEqual([]);
     });
   }
 });

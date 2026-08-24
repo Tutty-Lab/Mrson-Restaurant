@@ -1671,7 +1671,20 @@ export function generateSchedule(input: GenerateInput): Shift[] {
 
   const unmet = employees.filter((e) => state.remaining.get(e.id)! > 0);
   if (unmet.length > 0) {
-    throw new Error(buildUnmetMessage(state, unmet, dates, dayOf));
+    // Ein zu hohes Soll ist kein Grund, GAR KEINEN Plan zu liefern. Der Betrieb
+    // stünde sonst mit leeren Händen da, obwohl fast alles verteilt werden
+    // konnte – wegen einer Zahl, die sich in zehn Sekunden korrigieren lässt.
+    // Geliefert wird, was geht; der Rest ist eine Warnung (validateSchedule).
+    //
+    // Abgebrochen wird nur noch, wenn schon die Eingabe unmöglich ist: ein Soll
+    // unter der kürzesten Schicht oder ein Monat ohne nutzbaren Tag. Da hilft
+    // kein Teilplan, sondern nur eine Korrektur.
+    const hoffnungslos =
+      unmet.some((e) => e.targetMinutes > 0 && e.targetMinutes < MIN_SHIFT_MINUTES) ||
+      monthCapacity(dates, dayOf).maxDays === 0;
+    if (hoffnungslos) {
+      throw new Error(buildUnmetMessage(state, unmet, dates, dayOf));
+    }
   }
 
   repairDemand(state, employeesById);

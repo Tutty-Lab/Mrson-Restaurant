@@ -29,16 +29,25 @@ export function Dashboard({ store }: { store: UseScheduleReturn }) {
   const notGenerated = schedule.shifts.length === 0;
 
   // Trước khi tạo lịch: trạng thái trung tính (chưa xếp giờ nào nên chưa thể "lỗi").
+  // Warnungen und Fehler getrennt zählen: ein zu hohes Monats-Soll macht den
+  // Plan nicht unbrauchbar, es fehlen nur Stunden, die der Monat nicht hergibt.
+  const warnungen = validation.errors.filter((e) => e.severity === "warning");
+  const fehler = validation.errors.filter((e) => e.severity !== "warning");
+
   const statusValue = notGenerated
     ? "Chưa tạo lịch"
-    : validation.valid
-      ? "Hợp lệ"
-      : `${validation.errors.length} lỗi`;
+    : fehler.length > 0
+      ? `${fehler.length} lỗi`
+      : warnungen.length > 0
+        ? `${warnungen.length} cảnh báo`
+        : "Hợp lệ";
   const statusAccent = notGenerated
     ? "text-slate-500"
-    : validation.valid
-      ? "text-emerald-600"
-      : "text-rose-600";
+    : fehler.length > 0
+      ? "text-rose-600"
+      : warnungen.length > 0
+        ? "text-amber-600"
+        : "text-emerald-600";
 
   return (
     <div>
@@ -56,7 +65,7 @@ export function Dashboard({ store }: { store: UseScheduleReturn }) {
           Chưa có lịch. Sang tab „Lịch làm việc" và bấm „Tạo lịch làm việc".
         </div>
       )}
-      {validation.valid && schedule.shifts.length > 0 && (
+      {validation.valid && warnungen.length === 0 && schedule.shifts.length > 0 && (
         <div className="mt-2 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm px-3 py-2">
           Tất cả giờ định mức đã được phân bổ chính xác.
         </div>
@@ -66,6 +75,29 @@ export function Dashboard({ store }: { store: UseScheduleReturn }) {
         công. Nó chỉ có nghĩa là tổng giờ trong ngày quá mỏng để lúc nào cũng
         có 2 người. Trước đây chuyện này diễn ra âm thầm, không ai biết.
       */}
+      {/*
+        Zu hohes Soll: der Plan ist da und benutzbar, es fehlen nur Stunden,
+        die der Monat nicht hergibt. Früher brach die Planung hier komplett ab
+        und der Betrieb bekam GAR KEINEN Plan – wegen einer Zahl, die sich in
+        zehn Sekunden korrigieren lässt.
+      */}
+      {warnungen.length > 0 && schedule.shifts.length > 0 && (
+        <div className="mt-2 rounded bg-amber-50 border border-amber-200 text-amber-900 text-sm px-3 py-2">
+          <div className="font-medium">
+            Lịch đã tạo xong, nhưng {warnungen.length} người chưa đủ giờ định mức:
+          </div>
+          <ul className="mt-1 space-y-0.5">
+            {warnungen.map((w, i) => (
+              <li key={i}>{w.message}</li>
+            ))}
+          </ul>
+          <div className="mt-1 text-amber-700">
+            Cách xử lý: giảm định mức cho những người này, thêm ngày làm được trong tuần,
+            hoặc chấp nhận phần thiếu và bù ở tháng sau.
+          </div>
+        </div>
+      )}
+
       {peakGaps.length > 0 && (
         <div className="mt-2 rounded bg-amber-50 border border-amber-200 text-amber-900 text-sm px-3 py-2">
           {/*

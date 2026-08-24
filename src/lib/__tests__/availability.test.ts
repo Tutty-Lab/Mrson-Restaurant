@@ -219,20 +219,29 @@ describe("Vier Sonntage reichen für die Sonntags-Kräfte nicht", () => {
   // mehr über den Sonntag aus.
   const belegschaft = () => SEED_MONTHS[0].employees.map((e) => ({ ...e }));
 
-  it("meldet den Fehlbetrag, statt einen falschen Plan zu liefern", () => {
-    let message = "";
-    try {
-      // Juni 2026 hat vier Sonntage.
-      generateSchedule({
-        year: 2026,
-        month: 6,
-        workHours: DEFAULT_WORK_HOURS,
-        employees: belegschaft(),
-      });
-    } catch (e) {
-      message = (e as Error).message;
+  it("meldet den Fehlbetrag als Warnung, liefert aber trotzdem einen Plan", () => {
+    // Ein zu hohes Soll bricht die Planung NICHT ab: der Betrieb bekommt den
+    // bestmöglichen Plan, und wer sein Soll nicht erreicht, steht als Warnung
+    // in der Prüfung. Juni 2026 hat vier Sonntage.
+    const employees = belegschaft();
+    const plan = generateSchedule({
+      year: 2026,
+      month: 6,
+      workHours: DEFAULT_WORK_HOURS,
+      employees,
+    });
+    expect(plan.length).toBeGreaterThan(0);
+
+    const result = validateSchedule(employees, plan, 2026);
+    const nurSonntag = employees.filter(
+      (e) => e.availableWeekdays?.length === 1 && e.availableWeekdays[0] === "sunday",
+    );
+    for (const e of nurSonntag) {
+      const warnung = result.errors.find((x) => x.employeeId === e.id && x.severity === "warning");
+      expect(warnung?.message).toContain("mới xếp được");
     }
-    expect(message).toContain("36h / 43h");
+    // Warnungen machen den Plan nicht ungültig.
+    expect(result.valid).toBe(true);
   });
 
   it("geht in einem Monat mit fünf Sonntagen auf", () => {
