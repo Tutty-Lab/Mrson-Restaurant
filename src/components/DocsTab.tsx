@@ -86,7 +86,17 @@ export function DocsTab() {
 
       <Section title="Nguyên tắc bắt buộc (luôn đúng)">
         <ul className="list-disc pl-5 space-y-1">
-          <li>Tối đa <b>9 giờ công</b> mỗi ngày cho một người.</li>
+          <li>
+            Tối đa <b>8 giờ công</b> cho một ca (chủ quán quy định). Trước đây là 9.
+            <br />
+            <span className="text-slate-500">
+              Hệ quả: T3–T5 chỉ có 2 người mà quán mở 11:30–22:00 (10,5 tiếng). Hai ca 8h
+              (8,5 tiếng có mặt) phủ kín được cả ngày nếu vào 11:30 và 13:30 — nhưng khi đó
+              từ 20:00 đến 21:00 chỉ còn <b>một người</b>. App chọn phủ kín trước, vì quán mở
+              mà không có ai là lỗi nặng hơn. Muốn đủ 2 người buổi tối thì T3–T5 cần thêm
+              người thứ ba.
+            </span>
+          </li>
           <li>Mỗi người <b>một ca mỗi ngày</b>.</li>
           <li>
             <b>Tối đa 7 nhân viên</b> — tính <b>tổng số người</b>, không phân biệt thợ
@@ -213,7 +223,7 @@ export function DocsTab() {
         <p>
           Giờ nghỉ <b>không trừ vào giờ công</b> mà kéo dài thời gian có mặt. Quy tắc của tiệm:{" "}
           <b>làm quá 4 tiếng là phải nghỉ</b> (chặt hơn luật Đức, luật chỉ bắt buộc từ 6 tiếng). Ví
-          dụ ca 9 giờ công chiếm 9 tiếng 45 phút vì có thêm 45 phút nghỉ.
+          dụ ca 8 giờ công (ca dài nhất) chiếm 8 tiếng rưỡi vì có thêm 30 phút nghỉ.
         </p>
         <div className="overflow-x-auto">
           <table className="text-sm border-collapse">
@@ -255,8 +265,8 @@ export function DocsTab() {
         <p className="text-slate-600">
           App chọn <b>ca ngắn nhất còn kịp tiến độ</b>, không phải ca dài nhất. Lý do: định mức tháng
           chia cho số ngày còn làm được ra một nhịp trung bình; ai làm dài hơn nhịp đó sẽ hết giờ
-          sớm và những ngày cuối tháng quán không còn người. Ví dụ <b>55h</b> mà chia ca 9h thì hết
-          sau 6 ngày, chia ca 5h thì đủ cho 11 ngày.
+          sớm và những ngày cuối tháng quán không còn người. Ví dụ <b>55h</b> mà chia ca 8h thì hết
+          sau 7 ngày, chia ca 5h thì đủ cho 11 ngày.
         </p>
         <p className="text-slate-600">
           Khoảng <b>1/10</b> số ca được rút ngắn còn 4–5 giờ cho lịch đỡ đều đều — chỉ áp dụng khi

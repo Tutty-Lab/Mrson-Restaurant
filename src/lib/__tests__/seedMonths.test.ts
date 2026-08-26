@@ -62,19 +62,37 @@ describe.each(runs)("Seed-Monat: $seed.label", ({ seed, shifts, analysis }) => {
     expect(luecken).toEqual([]);
   });
 
-  it("trifft die Summe der Sollstunden exakt", () => {
-    expect(analysis.totalPaidHours).toBe(totalTargetHours(seed));
-  });
-
-  it("trifft jedes einzelne Mitarbeiter-Soll exakt", () => {
+  // Zu VIEL verteilte Zeit bleibt in jedem Fall ein Fehler. Ein Fehlbetrag
+  // ist seit dem 8-Stunden-Deckel zulässig und wird als Warnung gemeldet:
+  // zwei Sonntagskräfte haben 43 h im Monat, kommen an fünf Sonntagen aber
+  // höchstens auf 5 × 8 = 40 h. Das ist Rechnen, kein Planungsfehler.
+  it("verteilt nie mehr Stunden als vorgesehen", () => {
+    expect(analysis.totalPaidHours).toBeLessThanOrEqual(totalTargetHours(seed));
     for (const emp of seed.employees) {
-      expect(analysis.hoursByEmployee.get(emp.id)).toBe(emp.targetMinutes / 60);
+      expect(analysis.hoursByEmployee.get(emp.id) ?? 0).toBeLessThanOrEqual(
+        emp.targetMinutes / 60,
+      );
     }
   });
 
-  it("besteht die Validierung ohne Fehler", () => {
+  it("meldet jeden Fehlbetrag, statt ihn zu verschweigen", () => {
     const result = validateSchedule(seed.employees, shifts);
-    expect(result.errors).toEqual([]);
+    for (const emp of seed.employees) {
+      const ist = analysis.hoursByEmployee.get(emp.id) ?? 0;
+      if (ist === emp.targetMinutes / 60) continue;
+      const warnung = result.errors.find(
+        (e) => e.employeeId === emp.id && e.severity === "warning",
+      );
+      expect(
+        warnung,
+        `${emp.name}: ${ist} h statt ${emp.targetMinutes / 60} h, ohne Warnung`,
+      ).toBeDefined();
+    }
+  });
+
+  it("besteht die Validierung ohne harte Fehler", () => {
+    const result = validateSchedule(seed.employees, shifts);
+    expect(result.errors.filter((e) => e.severity !== "warning")).toEqual([]);
   });
 
   it("hält höchstens 6 aufeinanderfolgende Arbeitstage ein", () => {
@@ -84,10 +102,10 @@ describe.each(runs)("Seed-Monat: $seed.label", ({ seed, shifts, analysis }) => {
     }
   });
 
-  it("jede Schicht ist 3..9 h lang mit passender Pause", () => {
+  it("jede Schicht ist 3..8 h lang mit passender Pause", () => {
     for (const s of shifts) {
       expect(s.paidMinutes).toBeGreaterThanOrEqual(3 * 60);
-      expect(s.paidMinutes).toBeLessThanOrEqual(9 * 60);
+      expect(s.paidMinutes).toBeLessThanOrEqual(8 * 60);
       expect(s.pauseMinutes).toBe(calculatePause(s.paidMinutes));
       expect(s.endMinutes - s.startMinutes - s.pauseMinutes).toBe(s.paidMinutes);
     }

@@ -95,10 +95,20 @@ function isWeekend(isoDate: string): boolean {
   return key === "friday" || key === "saturday";
 }
 
-const SHIFT_HOURS_DESC = [9, 8, 7, 6, 5, 4, 3] as const;
+const SHIFT_HOURS_DESC = [8, 7, 6, 5, 4, 3] as const;
 
-/** Längste zulässige Schicht in Stunden (bezahlt, ohne Pause). */
-const MAX_SHIFT_HOURS = 9;
+/**
+ * Längste zulässige Schicht in Stunden (bezahlt, ohne Pause).
+ *
+ * Ansage des Chefs: eine Schicht geht höchstens 8 Stunden. Vorher waren 9
+ * erlaubt. Mit Pause sind 8 Stunden 8,5 h Anwesenheit.
+ *
+ * FOLGE für die hohen Sollwerte: wer 173 h im Monat auf fünf Tagen die Woche
+ * unterbringen muss, braucht damit rechnerisch fast jeden seiner Tage voll
+ * (22 Tage × 8 h = 176 h). In kurzen Monaten kann das knapp nicht aufgehen –
+ * gemeldet wird es dann als Warnung, nicht als Fehler.
+ */
+const MAX_SHIFT_HOURS = 8;
 
 /** Kürzeste zulässige Schicht in Minuten – darunter geht ein Soll nicht auf. */
 const MIN_SHIFT_MINUTES = 3 * 60;
@@ -115,11 +125,11 @@ const MIN_SHIFT_MINUTES = 3 * 60;
  * Abwechslung kostet hier Besetzung in der Stoßzeit.
  */
 const ALLOWED_HOURS: Record<Employee["employmentType"], readonly number[]> = {
-  VOLLZEIT: [4, 5, 6, 7, 8, 9],
-  TEILZEIT: [3, 4, 5, 6, 7, 8, 9],
+  VOLLZEIT: [4, 5, 6, 7, 8],
+  TEILZEIT: [3, 4, 5, 6, 7, 8],
   // Minijob ist arbeitsrechtlich eine Form der Teilzeit – gleiche Längen.
   // Begrenzt wird er über das Monats-Soll, nicht über die Schichtlänge.
-  MINIJOB: [3, 4, 5, 6, 7, 8, 9],
+  MINIJOB: [3, 4, 5, 6, 7, 8],
 };
 
 /**
@@ -136,7 +146,7 @@ const SHORT_SHIFT_CHANCE = 0.1;
 const SHORT_SHIFT_HOURS: readonly number[] = [4, 5];
 
 /** Alle überhaupt zulässigen Längen – Rückfall, wenn das Fenster eng ist. */
-const ALL_HOURS: readonly number[] = [3, 4, 5, 6, 7, 8, 9];
+const ALL_HOURS: readonly number[] = [3, 4, 5, 6, 7, 8];
 
 // ── Stoßzeiten (peak windows) ───────────────────────────────────────────────
 // Vorgabe des Chefs: mittags 12–13 Uhr und abends 17–19 Uhr müssen JEDERZEIT
@@ -293,21 +303,14 @@ export function cheapestPeakCover(window: DayWindow): number[] {
   const span = window.endMinutes - window.startMinutes;
   const usable = ALL_HOURS.filter((h) => presenceFromPaid(h * 60) <= span);
 
-  let found: number[] = [];
-  // Erst lückenlos suchen; findet sich nichts, noch einmal mit der alten,
-  // schwächeren Anforderung (nur auf- und zusperren).
-  for (const streng of [true, false]) {
-    if (found.length > 0) break;
-  // Nach Anzahl der Dienste aufsteigend, innerhalb nach Gesamtstunden.
-  for (let count = 1; count <= 4 && found.length === 0; count++) {
+  const suche = (count: number, streng: boolean, mitSpitze: boolean): number[] | null => {
     let bestTotal = Number.POSITIVE_INFINITY;
     let best: number[] | null = null;
     const combo: number[] = [];
-
     const recurse = (from: number) => {
       if (combo.length === count) {
         const total = combo.reduce((a, b) => a + b, 0);
-        if (total < bestTotal && canCoverDay(window, combo, streng)) {
+        if (total < bestTotal && canCoverDay(window, combo, streng, mitSpitze)) {
           bestTotal = total;
           best = [...combo];
         }
@@ -320,9 +323,31 @@ export function cheapestPeakCover(window: DayWindow): number[] {
       }
     };
     recurse(0);
+    return best;
+  };
 
-    if (best) found = (best as number[]).slice().sort((a, b) => b - a);
-  }
+  let found: number[] = [];
+  // Erst lückenlos suchen; findet sich nichts, noch einmal mit der alten,
+  // schwächeren Anforderung (nur auf- und zusperren).
+  for (const streng of [true, false]) {
+    if (found.length > 0) break;
+    // Nach Anzahl der Dienste aufsteigend.
+    for (let count = 1; count <= 4 && found.length === 0; count++) {
+      // Bei GLEICHER Personenzahl zuerst eine Lösung, die auch die Stoßzeit
+      // hält – aber die Stoßzeit darf die Personenzahl nicht hochtreiben.
+      //
+      // Seit eine Schicht höchstens 8 Stunden dauert, kann ein Dienst, der um
+      // 11:30 aufsperrt, die Abendspitze bis 21:00 nicht mehr halten; mit zwei
+      // Leuten geht beides zusammen nicht. Vorher hieß das Ergebnis deshalb
+      // "dieser Tag braucht DREI Leute" (7 + 3 + 3). Ein Laden mit drei
+      // Beschäftigten teilte daraufhin jeden Tag durch drei, und niemand kam
+      // mehr auf sein Monats-Soll: aus 160 h wurden 121.
+      //
+      // Wie viele Leute der Laden braucht, entscheidet die Öffnungszeit. Die
+      // Stoßzeit entscheidet nur, WIE lang die Dienste dieser Leute sind.
+      const best = suche(count, streng, true) ?? suche(count, streng, false);
+      if (best) found = best.slice().sort((a, b) => b - a);
+    }
   }
 
   coverCache.set(key, found);
@@ -359,15 +384,31 @@ function uncoveredMinutes(shifts: Shift[], window: DayWindow): number {
 }
 
 /**
- * Gesamtnote eines Tages, je kleiner desto besser: erst die Stoßzeit, dann die
- * Lücken. Eine fehlende Person in der Spitze wiegt mehr als jede Lücke – aber
- * eine Lücke wiegt eben NICHT null, und genau das war der Fehler.
+ * Gesamtnote eines Tages, je kleiner desto besser: erst die Lücken, dann die
+ * Stoßzeit.
+ *
+ * Diese Reihenfolge stand einmal andersherum. Seit eine Schicht höchstens
+ * 8 Stunden dauert, ist der Unterschied nicht mehr theoretisch: Di–Do stehen
+ * nur zwei Leute zur Verfügung, und zwei Anwesenheiten von je 8,5 Stunden
+ * decken 11:30–22:00 nur dann lückenlos, wenn sie um 11:30 und um 13:30
+ * anfangen – dann ist aber von 20:00 bis 21:00 nur einer da und die
+ * Abendspitze fehlt um eine Person. Wog die Spitze schwerer, schob der Plan
+ * beide Dienste nach hinten und der Laden stand um 11:30 eine Stunde leer.
+ *
+ * Ein offener Laden ohne Personal ist der schwerere Fehler. Die Abendspitze
+ * ist ausserdem eine ANNAHME (siehe PEAK_WINDOWS), die Öffnungszeit nicht.
  */
 function dayDefect(shifts: Shift[], window: DayWindow): number {
-  return peakDeficit(shifts, window) * 10000 + uncoveredMinutes(shifts, window);
+  return uncoveredMinutes(shifts, window) * 10000 + peakDeficit(shifts, window);
 }
 
-function canCoverDay(window: DayWindow, hours: number[], luckenlos = true): boolean {
+function canCoverDay(
+  window: DayWindow,
+  hours: number[],
+  luckenlos = true,
+  /** false = nur lückenlos, die Stoßzeit darf dünn bleiben. */
+  mitSpitze = true,
+): boolean {
   const probe: Shift[] = hours.map((h, i) => ({
     id: `probe-${i}`,
     employeeId: `probe-${i}`,
@@ -388,6 +429,7 @@ function canCoverDay(window: DayWindow, hours: number[], luckenlos = true): bool
   // Notausgang: gäbe es zu einer Fensterform überhaupt keine lückenlose
   // Lösung, käme sonst eine LEERE Abdeckung heraus – und die schaltet die
   // Besetzungslogik komplett ab, was schlimmer wäre als das Problem.
+  if (!mitSpitze) return !luckenlos || uncoveredMinutes(probe, window) === 0;
   if (!luckenlos) return peakDeficit(probe, window) === 0;
   return dayDefect(probe, window) === 0;
 }
@@ -427,10 +469,14 @@ function coverFilledFor(state: SchedulerState, isoDate: string, hours: number[])
 }
 
 /** Wie viele Dienste verlangt die billigste Abdeckung an diesem Tag? */
-function coverSize(state: SchedulerState, isoDate: string): number {
+/** Die billigste Abdeckung dieses Tages (siehe cheapestPeakCover). */
+function coverFor(state: SchedulerState, isoDate: string): number[] {
   const day = state.dayOf(isoDate);
-  if (day.closed) return 0;
-  return cheapestPeakCover(day.window).length;
+  return day.closed ? [] : cheapestPeakCover(day.window);
+}
+
+function coverSize(state: SchedulerState, isoDate: string): number {
+  return coverFor(state, isoDate).length;
 }
 
 /**
@@ -440,7 +486,7 @@ function coverSize(state: SchedulerState, isoDate: string): number {
 function missingCoverHours(state: SchedulerState, isoDate: string): number {
   const day = state.dayOf(isoDate);
   if (day.closed) return 0;
-  const need = [...cheapestPeakCover(day.window)];
+  const need = [...coverFor(state, isoDate)];
   if (need.length === 0) return 0;
 
   for (const h of dayPaidHours(state, isoDate).sort((a, b) => b - a)) {
@@ -452,7 +498,7 @@ function missingCoverHours(state: SchedulerState, isoDate: string): number {
 
 /**
  * Wählt die Länge (Stunden) der nächsten Schicht eines Mitarbeiters so, dass
- * - sie 3..9 h ist und ins Tagesfenster passt (<= maxHours),
+ * - sie 3..8 h ist und ins Tagesfenster passt (<= maxHours),
  * - der verbleibende Rest exakt aufteilbar bleibt (0 oder >= 3 h),
  * - Vollzeit möglichst lange, Teilzeit eher kürzere Schichten bekommt.
  * Gibt 0 zurück, wenn an diesem Tag keine gültige Länge möglich ist.
@@ -767,8 +813,15 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
     // Stunden des Tages übrig bleiben.
     if (bodiesMissing > 1) {
       const leftHours = (state.rawTarget.get(isoDate)! - dsNow.totalPaid) / 60;
-      const share = Math.floor(leftHours / bodiesMissing);
-      if (share >= 3) maxHours = Math.min(maxHours, share);
+      // Zurückgelegt wird nur, was die weiteren Personen wirklich brauchen:
+      // je eine kürzeste Schicht. Vorher wurden die Stunden des Tages GLEICH
+      // geteilt – bei 14 Stunden und zwei fehlenden Personen also 7 und 7.
+      // Seit eine Schicht höchstens 8 Stunden dauert, ist das der Grund, warum
+      // Di–Do niemand mehr auf sein Monats-Soll kam: dort stehen nur zwei
+      // Leute, und beide wurden auf 7 statt 8 Stunden gedeckelt.
+      const reserve = 3 * (bodiesMissing - 1);
+      const room = Math.floor(leftHours - reserve);
+      if (room >= 3) maxHours = Math.min(maxHours, room);
     }
 
     // Solange der Tag noch nicht genug LANGE Dienste hat, um die Stoßzeit zu
@@ -782,7 +835,7 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
     // zuerst einen 9-h-Dienst. Bei 26 Tagen sind das 234 h allein dafür – bei
     // 317 h Gesamtsoll bleibt für die zweite Person kaum etwas übrig, und eine
     // Teilzeitkraft mit 55 h ist nach sechs Diensten durch.
-    const coverHours = cheapestPeakCover(day.window).reduce((sum, h) => sum + h, 0);
+    const coverHours = coverFor(state, isoDate).reduce((sum, h) => sum + h, 0);
     const dayTargetHours = state.rawTarget.get(isoDate)! / 60;
     const affordsCover = coverHours > 0 && dayTargetHours >= coverHours - 0.5;
     const stillNeedsLong = affordsCover

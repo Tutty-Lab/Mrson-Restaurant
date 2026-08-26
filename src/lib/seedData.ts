@@ -104,10 +104,30 @@ const kopie = (): Employee[] => BELEGSCHAFT.map((e) => ({ ...e }));
  * nicht" ausdrücklich fest, statt es hinter passend gewählten Monaten zu
  * verstecken.
  */
+/**
+ * Di, Mi und Do haben KEINE dritte Kraft.
+ *
+ * Die vier Minijob-Kräfte sind auf Fr/Sa/So festgelegt; an den drei Tagen
+ * dazwischen stehen nur Hà Thị Chăm und Phạm Minh Hạnh zur Verfügung. Seit
+ * eine Schicht höchstens 8 Stunden dauert (8,5 h Anwesenheit), lässt sich
+ * 11:30–22:00 mit zweien nur noch lückenlos abdecken, wenn sie 11:30 und
+ * 13:30 anfangen – dann ist von 20:00 bis 21:00 nur einer da.
+ *
+ * Beides zugleich geht nicht: entweder steht der Laden mittags eine Stunde
+ * leer, oder die Abendspitze hat abends eine Stunde lang eine Person statt
+ * zwei. Der Plan wählt das Zweite; der offene, unbesetzte Laden ist der
+ * schwerere Fehler, und die Abendspitze ist bis heute eine Annahme (siehe
+ * PEAK_WINDOWS), keine Ansage des Chefs.
+ *
+ * 12 = vier Wochen à drei Tage. Wird das nicht gewünscht, braucht der Betrieb
+ * an Di/Mi/Do eine dritte Kraft oder einen späteren Ladenöffnungsbeginn.
+ */
+const DUENNE_WOCHENMITTE = 12;
+
 export const SEED_MONTHS: SeedMonth[] = [
-  { year: 2026, month: 8, label: "August 2026", employees: kopie() },
-  { year: 2026, month: 11, label: "November 2026", employees: kopie() },
-  { year: 2027, month: 1, label: "Januar 2027", employees: kopie() },
+  { year: 2026, month: 8, label: "August 2026", employees: kopie(), maxPeakGaps: DUENNE_WOCHENMITTE },
+  { year: 2026, month: 11, label: "November 2026", employees: kopie(), maxPeakGaps: DUENNE_WOCHENMITTE },
+  { year: 2027, month: 1, label: "Januar 2027", employees: kopie(), maxPeakGaps: DUENNE_WOCHENMITTE },
 ];
 
 /** Baut einen leeren Schedule (ohne Schichten) für einen Seed-Monat. */

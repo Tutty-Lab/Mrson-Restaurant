@@ -44,7 +44,8 @@ export type ValidationResult = {
   summaries: EmployeeSummary[];
 };
 
-const MAX_PAID_MINUTES = 9 * 60;
+/** Ansage des Chefs: eine Schicht dauert höchstens 8 Stunden. */
+const MAX_PAID_MINUTES = 8 * 60;
 const MAX_CONSECUTIVE_DAYS = 6;
 
 export function validateSchedule(

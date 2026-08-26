@@ -96,15 +96,16 @@ werden direkt aus den Konstanten gerendert und können daher nicht veralten.
   einen ganzen Arbeitstag verbraucht), Anspruch 24 Tage für Stammkräfte und 8
   für Minijob, geprüft über das ganze **Jahr**. Mehr ist erlaubt – es gibt eine
   Warnung, keinen Riegel.
-- Max. **9 bezahlte Stunden** pro Tag, **ein Dienst** pro Mitarbeiter und Tag.
+- Max. **8 bezahlte Stunden** pro Dienst (Ansage des Chefs), **ein Dienst** pro
+  Mitarbeiter und Tag.
 - Höchstens **6 aufeinanderfolgende** Arbeitstage.
 - **Pause** (`calculatePause`), Vorgabe des Betriebs „nach spätestens 4 Stunden
   muss die Kraft eine Pause nehmen": bis 4 h = 0 Min, über 4 h = 30 Min, ab 9 h
   = 45 Min (ArbZG-Minimum). Strenger als das Gesetz, das erst ab über 6 h eine
   Pause verlangt. Die Pause zählt **nicht** zum Soll, verlängert aber die
-  Anwesenheit: `presence = paid + pause`. Eine 9-h-Schicht belegt damit 9,75 h
-  und passt in das Fenster 11:30–22:00 (10,5 h).
-- Schichtlängen: **3 bis 9 Stunden**. Vollzeit bekommt 4..9 h, Teilzeit 3..9 h.
+  Anwesenheit: `presence = paid + pause`. Eine 8-h-Schicht belegt damit 8,5 h
+  im Fenster 11:30–22:00 (10,5 h).
+- Schichtlängen: **3 bis 8 Stunden**. Vollzeit bekommt 4..8 h, Teilzeit 3..8 h.
   Etwa jede zehnte Schicht wird bewusst auf 4–5 h gekürzt
   (`SHORT_SHIFT_CHANCE`), damit die Pläne nicht mechanisch aussehen – aber nur,
   wenn der Tag keinen langen Dienst mehr für die Stoßzeit braucht.
@@ -164,7 +165,7 @@ Tage und die Monats-Validierung.
 
 `seedMonths.test.ts` fährt den Scheduler gegen **drei Monate mit
 unterschiedlichen Belegschaften** und prüft: jedes Einzelsoll exakt, höchstens
-6 Tage am Stück, Schichtlängen 3..9 h mit passender Pause, keine Schicht
+6 Tage am Stück, Schichtlängen 3..8 h mit passender Pause, keine Schicht
 außerhalb des Fensters – und beide Stoßzeiten durchgehend doppelt besetzt.
 Diese letzte Prüfung gibt es doppelt: einmal über `minCoverageOver`, einmal als
 stumpfe Gegenprobe, die **jede Minute einzeln nachzählt**. Wäre die Abtastung

@@ -244,8 +244,15 @@ describe("Vier Sonntage reichen für die Sonntags-Kräfte nicht", () => {
     expect(result.valid).toBe(true);
   });
 
-  it("geht in einem Monat mit fünf Sonntagen auf", () => {
-    // August 2026 hat fünf Sonntage.
+  it("geht auch mit fünf Sonntagen nicht mehr auf – seit eine Schicht 8 h dauert", () => {
+    // August 2026 hat fünf Sonntage. Solange 9 Stunden erlaubt waren, trug das
+    // die 43 h (5 × 9 = 45). Der Chef hat den Dienst inzwischen auf 8 Stunden
+    // begrenzt; damit sind fünf Sonntage höchstens 40 h, und die 43 h sind in
+    // KEINEM Monat mehr erreichbar.
+    //
+    // Der Test hält das absichtlich fest: entweder senkt der Betrieb die
+    // beiden Sonntagskräfte auf 40 h, oder er gibt ihnen einen zweiten
+    // Wochentag. Beides ist seine Entscheidung, nicht die des Programms.
     const employees = belegschaft();
     const plan = generateSchedule({
       year: 2026,
@@ -253,7 +260,24 @@ describe("Vier Sonntage reichen für die Sonntags-Kräfte nicht", () => {
       workHours: DEFAULT_WORK_HOURS,
       employees,
     });
+
+    const nurSonntag = employees.filter(
+      (e) => e.availableWeekdays?.length === 1 && e.availableWeekdays[0] === "sunday",
+    );
+    expect(nurSonntag.length).toBeGreaterThan(0);
+
+    for (const e of nurSonntag) {
+      const summe = plan
+        .filter((s) => s.employeeId === e.id)
+        .reduce((a, s) => a + s.paidMinutes, 0);
+      // Fünf Sonntage à höchstens 8 h.
+      expect(summe).toBeLessThanOrEqual(5 * 8 * 60);
+      expect(summe).toBeLessThan(e.targetMinutes);
+    }
+
+    // Alle ÜBRIGEN treffen ihr Soll weiterhin genau.
     for (const e of employees) {
+      if (nurSonntag.includes(e)) continue;
       const summe = plan
         .filter((s) => s.employeeId === e.id)
         .reduce((a, s) => a + s.paidMinutes, 0);

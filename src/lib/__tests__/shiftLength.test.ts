@@ -3,11 +3,10 @@ import { chooseShiftHours, maxShiftHoursForWindow } from "../scheduler";
 
 describe("maxShiftHoursForWindow", () => {
   it("rechnet mit Anwesenheit inkl. Pause, nicht mit bezahlter Zeit", () => {
-    // Anwesenheit: 3h=180, 4h=240, 5h=330, 6h=390, 7h=450, 8h=510, 9h=585.
-    expect(maxShiftHoursForWindow(630)).toBe(9); // 11:30–22:00, die 9-h-Schicht passt
-    expect(maxShiftHoursForWindow(585)).toBe(9); // exakt die Anwesenheit der 9-h-Schicht
-    expect(maxShiftHoursForWindow(584)).toBe(8);
-    expect(maxShiftHoursForWindow(510)).toBe(8);
+    // Anwesenheit: 3h=180, 4h=240, 5h=330, 6h=390, 7h=450, 8h=510.
+    // 8 h ist die längste erlaubte Schicht (Ansage des Chefs).
+    expect(maxShiftHoursForWindow(630)).toBe(8); // 11:30–22:00 gäbe mehr her, 8 ist die Grenze
+    expect(maxShiftHoursForWindow(510)).toBe(8); // exakt die Anwesenheit der 8-h-Schicht
     expect(maxShiftHoursForWindow(509)).toBe(7);
     expect(maxShiftHoursForWindow(450)).toBe(7);
     expect(maxShiftHoursForWindow(449)).toBe(6);
@@ -29,7 +28,7 @@ describe("chooseShiftHours – Schicht passt sich dem Tag an", () => {
   });
 
   it("Vollzeit nimmt an normalen Tagen die längste passende Schicht", () => {
-    expect(chooseShiftHours(176 * 60, 9, "VOLLZEIT")).toBe(9);
+    expect(chooseShiftHours(176 * 60, 9, "VOLLZEIT")).toBe(8); // gedeckelt auf 8
     expect(chooseShiftHours(176 * 60, 8, "VOLLZEIT")).toBe(8);
   });
 
