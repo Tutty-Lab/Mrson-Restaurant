@@ -93,6 +93,7 @@ export function validateSchedule(
     if (genommen > anspruch) {
       errors.push({
         employeeId: emp.id,
+        severity: "warning",
         message:
           `${emp.name}: đã nghỉ phép ${genommen} ngày trong năm ${year}, ` +
           `vượt ${anspruch} ngày theo quy định.`,
