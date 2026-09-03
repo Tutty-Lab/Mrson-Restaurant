@@ -93,9 +93,10 @@ werden direkt aus den Konstanten gerendert und können daher nicht veralten.
   gesucht werden musste. Beim Klick auf „Dienstplan
   erstellen" fragt die App noch einmal ab, wer im Monat Urlaub hat.
   Gerechnet wird in **Arbeitstagen** (§ 3 BUrlG: wer eine Stunde kommt, hat
-  einen ganzen Arbeitstag verbraucht), Anspruch 24 Tage für Stammkräfte und 8
-  für Minijob, geprüft über das ganze **Jahr**. Mehr ist erlaubt – es gibt eine
-  Warnung, keinen Riegel.
+  einen ganzen Arbeitstag verbraucht), Anspruch 24 Tage für Vollzeit, **16 für
+  Teilzeit** (vier Arbeitstage die Woche, 24 × 4/6) und 8 für Minijob, geprüft
+  über das ganze **Jahr**. Mehr ist erlaubt – es gibt eine Warnung, keinen
+  Riegel.
 - Max. **8 bezahlte Stunden** pro Dienst (Ansage des Chefs), **ein Dienst** pro
   Mitarbeiter und Tag.
 - Höchstens **6 aufeinanderfolgende** Arbeitstage.

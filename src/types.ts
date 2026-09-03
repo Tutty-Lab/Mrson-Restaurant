@@ -46,13 +46,18 @@ export const MINIJOB_MAX_MONTHLY_HOURS = Math.floor((MINIJOB_MAX_WEEKLY_HOURS * 
  * Woche sind es 20 Tage im Jahr, bei sechs Tagen 24.
  *
  * Der Betrieb gibt für die Stammkräfte 24 vor (also die Sechs-Tage-Woche) und
- * für Minijob 8. Wird das überschritten, warnt die App – sie hindert aber
- * niemanden: mehr Urlaub als der gesetzliche Mindestanspruch ist erlaubt, er
- * kann vertraglich vereinbart oder aus dem Vorjahr übertragen sein.
+ * für Minijob 8. Teilzeit arbeitet an weniger Tagen der Woche; weil der
+ * Anspruch an den Arbeitstagen je Woche hängt, ist er entsprechend kleiner –
+ * bei vier Tagen die Woche 24 × 4/6 = 16.
+ *
+ * Wird das überschritten, warnt die App – sie hindert aber niemanden: mehr
+ * Urlaub als der gesetzliche Mindestanspruch ist erlaubt, er kann vertraglich
+ * vereinbart oder aus dem Vorjahr übertragen sein.
  */
 export const URLAUB_DAYS_PER_YEAR: Record<EmploymentType, number> = {
   VOLLZEIT: 24,
-  TEILZEIT: 24,
+  // Teilzeit: vier Arbeitstage die Woche => 24 × 4/6.
+  TEILZEIT: 16,
   MINIJOB: 8,
 };
 

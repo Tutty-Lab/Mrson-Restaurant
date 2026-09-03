@@ -139,9 +139,10 @@ export function DocsTab() {
           </li>
           <li>
             Phép tính theo <b>ngày làm việc</b> chứ không theo giờ: đến làm 1 tiếng
-            vẫn tính trọn một ngày. Toàn thời gian và bán thời gian{" "}
-            <b>24 ngày/năm</b>, Minijob <b>8 ngày/năm</b>; vượt thì cảnh báo (nghỉ
-            nhiều hơn luật vẫn được, có thể do hợp đồng hoặc chuyển từ năm trước).
+            vẫn tính trọn một ngày. Toàn thời gian <b>24 ngày/năm</b>, bán thời gian{" "}
+            <b>16 ngày/năm</b> (làm 4 ngày/tuần, 24 × 4/6), Minijob <b>8 ngày/năm</b>;
+            vượt thì cảnh báo (nghỉ nhiều hơn luật vẫn được, có thể do hợp đồng hoặc
+            chuyển từ năm trước).
           </li>
           <li>Không làm quá <b>6 ngày liên tiếp</b>.</li>
           <li>
