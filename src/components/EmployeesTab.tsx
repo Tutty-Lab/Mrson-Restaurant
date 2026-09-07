@@ -5,15 +5,16 @@ import { splitTargetHours } from "../lib/splitTargetHours";
 import { VacationPicker } from "./VacationPicker";
 import { isDayClosed } from "../lib/workHours";
 import { publicHolidays } from "../lib/holidays";
-import {
-  WEEKDAY_SHORT_VI,
-  type WeekdayKey,
-} from "../lib/demand";
+import { WEEKDAY_SHORT_VI, type WeekdayKey } from "../lib/demand";
 import {
   vacationDatesInMonth,
   vacationDaysInYear,
   vacationEntitlement,
 } from "../lib/availability";
+import { employmentShortVi } from "../lib/employment";
+
+const inputClass =
+  "rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500";
 
 const WEEKDAY_ORDER: WeekdayKey[] = [
   "monday",
@@ -25,13 +26,6 @@ const WEEKDAY_ORDER: WeekdayKey[] = [
   "sunday",
 ];
 
-/** Zusatzklassen für gesperrte Felder – ein Feld, das aussieht wie immer, aber
- *  keine Eingabe annimmt, ist schlimmer als ein sichtbar graues. */
-const gesperrt = "disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed";
-
-const inputClass =
-  "rounded border border-slate-300 px-2 py-1 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500";
-
 /**
  * Ab hier wird gewarnt. 192 h = 24 Tage à 8 h; darüber wird der Monat sehr
  * eng (6-Tage-Regel) und arbeitsrechtlich heikel.
@@ -40,18 +34,55 @@ export const WARN_HOURS = 192;
 
 /** Số ngày làm (= số ca) cho một mục tiêu, hoặc thông báo lỗi. */
 function splitInfo(targetHours: number, type: EmploymentType): { ok: boolean; text: string } {
+  if (targetHours <= 0) return { ok: true, text: "—" };
   try {
-    const parts = splitTargetHours(targetHours, type);
+    const parts = splitTargetHours(Math.round(targetHours), type);
     return { ok: true, text: `${parts.length} ca` };
   } catch (e) {
     return { ok: false, text: e instanceof Error ? e.message : "không hợp lệ" };
   }
 }
 
+/** Entwurf, während im Blatt getippt wird. Stunden als STRING (Feld leerbar). */
+type Draft = {
+  name: string;
+  employmentType: EmploymentType;
+  hours: string;
+  availableWeekdays: WeekdayKey[]; // [] = mọi ngày
+  maxDays: string;
+  vacationDates: string[];
+};
+
+function draftFrom(emp?: Employee): Draft {
+  return {
+    name: emp?.name ?? "",
+    employmentType: emp?.employmentType ?? "VOLLZEIT",
+    hours: emp ? String(emp.targetMinutes / 60) : "176",
+    availableWeekdays: emp?.availableWeekdays ?? [],
+    maxDays: emp?.maxDaysPerWeek ? String(emp.maxDaysPerWeek) : "",
+    vacationDates: emp?.vacationDates ?? [],
+  };
+}
+
+function draftToEmployee(d: Draft): Omit<Employee, "id"> {
+  const stunden = Math.max(0, Math.round(Number(d.hours) || 0));
+  const tage = Number(d.maxDays);
+  return {
+    name: d.name.trim() || "Nhân viên mới",
+    employmentType: d.employmentType,
+    targetMinutes: stunden * 60,
+    availableWeekdays:
+      d.availableWeekdays.length === 0 || d.availableWeekdays.length === 7
+        ? undefined
+        : [...d.availableWeekdays],
+    maxDaysPerWeek: d.maxDays === "" || tage < 1 ? undefined : Math.min(7, Math.round(tage)),
+    vacationDates: d.vacationDates.length > 0 ? [...d.vacationDates].sort() : undefined,
+  };
+}
+
 export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
   const { schedule, addEmployee, updateEmployee, removeEmployee, isLocked } = store;
-  // Geschlossene Tage sind im Urlaubskalender nicht wählbar: an einem Tag, an
-  // dem der Laden ohnehin zu hat, verbraucht niemand einen Urlaubstag.
+
   const holidays = useMemo(() => publicHolidays(schedule.year), [schedule.year]);
   const overrides = useMemo(
     () => Object.fromEntries(schedule.dateOverrides.map((o) => [o.date, o])),
@@ -62,320 +93,377 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
     [schedule.workHours, holidays, overrides],
   );
 
-  const [name, setName] = useState("");
-  const [type, setType] = useState<EmploymentType>("VOLLZEIT");
-  const [hours, setHours] = useState(176);
+  // null = zu; "new" = anlegen; sonst = die id, die bearbeitet wird.
+  const [offen, setOffen] = useState<null | "new" | string>(null);
+  const bearbeitet = useMemo(
+    () =>
+      typeof offen === "string" && offen !== "new"
+        ? schedule.employees.find((e) => e.id === offen)
+        : undefined,
+    [offen, schedule.employees],
+  );
 
   return (
     <section className="rounded-lg bg-white border border-slate-200 p-4 sm:p-5 shadow-sm">
-      <h2 className="text-base font-semibold text-slate-900 mb-4">Nhân viên</h2>
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-base font-semibold text-slate-900">
+          Nhân viên
+          {schedule.employees.length > 0 && (
+            <span className="ml-2 text-sm font-normal text-slate-400">
+              {schedule.employees.length}
+            </span>
+          )}
+        </h2>
+        <button
+          onClick={() => setOffen("new")}
+          disabled={isLocked}
+          className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 active:bg-slate-800 disabled:opacity-40"
+        >
+          + Thêm
+        </button>
+      </div>
+      <p className="text-xs text-slate-500 mb-4">
+        Giờ nhập theo <b>tháng</b>. Bấm vào một người để sửa (hình thức, giờ, ngày làm trong
+        tuần, số ngày/tuần, nghỉ phép).
+      </p>
 
-      {/*
-        Ohne diesen Hinweis ist der Tab eine Falle: bei gesperrtem Monat nehmen
-        addEmployee, updateEmployee und removeEmployee die Änderung stillschweigend
-        nicht an. Man klickt auf "Xoá", nichts passiert, und nirgends steht warum.
-      */}
       {isLocked && (
-        <div className="mb-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          <b>Tháng này đã khoá</b> vì lịch đã được in. Không thêm, sửa hay xoá được
-          nhân viên. Muốn sửa thì mở khoá ở tab <b>Bảng chấm công</b>, sửa xong nhớ{" "}
-          <b>in lại tuần đó và thay bản cũ</b>.
+        <div className="mb-3 rounded bg-amber-50 border border-amber-200 text-amber-900 text-sm px-3 py-2">
+          <b>Tháng này đã khoá</b> vì lịch đã in — mở khoá ở tab <b>Bảng chấm công</b> để sửa
+          nhân viên.
         </div>
       )}
 
-      {/* Thêm nhân viên mới */}
-      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3 mb-5 rounded bg-slate-50 border border-slate-200 p-3">
-        <label className="flex flex-col sm:flex-1 sm:min-w-[140px]">
-          <span className="text-xs text-slate-600 mb-1">Tên</span>
-          <input
-            disabled={isLocked}
-            className={`${inputClass} w-full ${gesperrt}`}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Tên nhân viên"
-          />
-        </label>
-        <label className="flex flex-col sm:w-40">
-          <span className="text-xs text-slate-600 mb-1">Hình thức làm việc</span>
-          <select
-            className={`${inputClass} w-full`}
-            value={type}
-            onChange={(e) => setType(e.target.value as EmploymentType)}
-          >
-            <option value="VOLLZEIT">Toàn thời gian</option>
-            <option value="TEILZEIT">Bán thời gian</option>
-                    <option value="MINIJOB">Minijob</option>
-          </select>
-        </label>
-        <label className="flex flex-col sm:w-32">
-          <span className="text-xs text-slate-600 mb-1">Giờ định mức</span>
-          <input
-            type="number"
-            min={0}
-            step={1}
-            className={`${inputClass} w-full`}
-            value={hours}
-            onChange={(e) => setHours(Number(e.target.value))}
-          />
-        </label>
-        <button
-          disabled={isLocked}
-          onClick={() => {
-            addEmployee(name, type, hours);
-            setName("");
-          }}
-          className="rounded bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-700 active:bg-slate-800"
-        >
-          Thêm nhân viên
-        </button>
-      </div>
-
-      {/* Danh sách – thẻ xếp dọc trên mobile, 1 dòng trên màn lớn (không cuộn ngang) */}
       {schedule.employees.length === 0 ? (
-        <div className="py-6 text-center text-slate-400">
-          Chưa có nhân viên. Thêm nhân viên ở khung phía trên.
+        <div className="py-8 text-center text-slate-400">
+          Chưa có nhân viên. Bấm <b>+ Thêm</b> để tạo.
         </div>
       ) : (
-        <div className="space-y-2">
-          {schedule.employees.map((emp) => {
-            const info = splitInfo(emp.targetMinutes / 60, emp.employmentType);
-            const tooMany = emp.targetMinutes / 60 > WARN_HOURS;
-            return (
-              <div key={emp.id} className="rounded-lg border border-slate-200 p-3 space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-                <label className="flex flex-col sm:flex-1">
-                  <span className="text-xs text-slate-500 mb-1 sm:hidden">Tên</span>
-                  <input
-                    disabled={isLocked}
-                    className={`${inputClass} w-full ${gesperrt}`}
-                    value={emp.name}
-                    onChange={(e) => updateEmployee(emp.id, { name: e.target.value })}
-                  />
-                </label>
-                <label className="flex flex-col sm:w-40">
-                  <span className="text-xs text-slate-500 mb-1 sm:hidden">Hình thức</span>
-                  <select
-                    disabled={isLocked}
-                    className={`${inputClass} w-full ${gesperrt}`}
-                    value={emp.employmentType}
-                    onChange={(e) =>
-                      updateEmployee(emp.id, {
-                        employmentType: e.target.value as EmploymentType,
-                      })
-                    }
-                  >
-                    <option value="VOLLZEIT">Toàn thời gian</option>
-                    <option value="TEILZEIT">Bán thời gian</option>
-                    <option value="MINIJOB">Minijob</option>
-                  </select>
-                </label>
-                <label className="flex flex-col sm:w-32">
-                  <span className="text-xs text-slate-500 mb-1 sm:hidden">Giờ định mức</span>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      min={0}
-                      step={1}
-                      disabled={isLocked}
-                      className={`${inputClass} w-full ${gesperrt}`}
-                      value={emp.targetMinutes / 60}
-                      onChange={(e) =>
-                        updateEmployee(emp.id, {
-                          targetMinutes: Math.max(0, Math.round(Number(e.target.value))) * 60,
-                        })
-                      }
-                    />
-                    <span className="text-slate-400">h</span>
-                  </div>
-                </label>
+        <ul className="space-y-2">
+          {schedule.employees.map((emp) => (
+            <li key={emp.id}>
+              <button
+                onClick={() => setOffen(emp.id)}
+                className="w-full text-left rounded-lg border border-slate-200 p-3 flex items-center gap-3 hover:bg-slate-50 active:bg-slate-100 transition-colors"
+              >
+                <EmployeeSummaryRow emp={emp} year={schedule.year} />
+                <span className="text-slate-300 text-lg leading-none">›</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
 
-                <div className="flex items-center justify-between sm:flex-col sm:items-end sm:justify-end gap-1 sm:w-24">
-                  <span className={`text-xs ${info.ok ? "text-slate-500" : "text-rose-600"}`}>
-                    {info.text}
-                  </span>
-                  {tooMany && (
-                    <span
-                      className="text-xs text-amber-600 font-medium"
-                      title={`Trên ${WARN_HOURS}h/tháng rất khó xếp (tối đa 6 ngày làm liên tiếp) và dễ vượt giới hạn giờ làm theo luật Đức.`}
-                    >
-                      ⚠ &gt;{WARN_HOURS}h
-                    </span>
-                  )}
-                  <button
-                    disabled={isLocked}
-                    onClick={() => removeEmployee(emp.id)}
-                    className="text-rose-600 hover:text-rose-800 text-sm font-medium disabled:text-slate-300 disabled:hover:text-slate-300"
-                  >
-                    Xoá
-                  </button>
-                </div>
-                </div>
+      {!isLocked && (
+        <button
+          onClick={() => setOffen("new")}
+          aria-label="Thêm nhân viên"
+          className="sm:hidden fixed bottom-5 right-5 z-40 h-14 w-14 rounded-full bg-slate-900 text-white text-2xl shadow-lg active:bg-slate-700 flex items-center justify-center"
+        >
+          +
+        </button>
+      )}
 
-                <EmployeeRules
-                  emp={emp}
-                  year={schedule.year}
-                  month={schedule.month}
-                  updateEmployee={updateEmployee}
-                  isClosed={isClosed}
-                  isLocked={isLocked}
-                />
-              </div>
-            );
-          })}
-        </div>
+      {offen !== null && !isLocked && (
+        <EmployeeSheet
+          key={bearbeitet?.id ?? "new"}
+          employee={bearbeitet}
+          year={schedule.year}
+          month={schedule.month}
+          isClosed={isClosed}
+          onClose={() => setOffen(null)}
+          onSave={(felder) => {
+            if (bearbeitet) updateEmployee(bearbeitet.id, felder);
+            else addEmployee(felder);
+            setOffen(null);
+          }}
+          onDelete={
+            bearbeitet
+              ? () => {
+                  removeEmployee(bearbeitet.id);
+                  setOffen(null);
+                }
+              : undefined
+          }
+        />
       )}
     </section>
   );
 }
 
-/**
- * Zweite Zeile je Mitarbeiter: feste Arbeitstage und Urlaub.
- *
- * Beides trägt der Betrieb selbst ein – der Automat entscheidet weder, wer
- * wann frei hat, noch wer an welchem Wochentag kommt. Er hält sich nur daran.
- */
-function EmployeeRules({
-  emp,
-  year,
-  month,
-  updateEmployee,
-  isClosed,
-  isLocked,
-}: {
-  emp: Employee;
-  year: number;
-  month: number;
-  updateEmployee: (id: string, patch: Partial<Employee>) => void;
-  isClosed: (iso: string) => boolean;
-  isLocked: boolean;
-}) {
-  // Die Liste ist eingeklappt, solange niemand sie braucht. Sieben
-  // Mitarbeiter mal einunddreißig Zeilen wären sonst eine sehr lange Seite.
-  const [kalenderOffen, setKalenderOffen] = useState(false);
-
-  const gewaehlt = emp.availableWeekdays ?? [];
-  const alleTage = gewaehlt.length === 0;
-
-  const toggleWeekday = (key: WeekdayKey) => {
-    // Kein Häkchen gesetzt heißt "alle Tage möglich". Wer aus diesem Zustand
-    // heraus einen Tag abwählt, meint "alle außer diesem" – deshalb wird die
-    // Liste dann mit allen anderen Tagen vorbelegt und nicht mit einem
-    // einzelnen. Andernfalls würde ein Klick die Person auf einen Tag
-    // festnageln, was das Gegenteil der Absicht wäre.
-    const basis = alleTage ? WEEKDAY_ORDER : gewaehlt;
-    const naechste = basis.includes(key)
-      ? basis.filter((k) => k !== key)
-      : [...basis, key];
-    updateEmployee(emp.id, {
-      availableWeekdays: naechste.length === WEEKDAY_ORDER.length ? undefined : naechste,
-    });
-  };
-
+/** Kompakte Zeile in der Liste. */
+function EmployeeSummaryRow({ emp, year }: { emp: Employee; year: number }) {
+  const stunden = emp.targetMinutes / 60;
+  const info = splitInfo(stunden, emp.employmentType);
+  const tooMany = stunden > WARN_HOURS;
+  const tage = emp.availableWeekdays;
   const urlaubJahr = vacationDaysInYear(emp, year);
-  const anspruch = vacationEntitlement(emp);
-  const imMonat = vacationDatesInMonth(emp, year, month);
-  const zuViel = urlaubJahr > anspruch;
-
-  const toggleUrlaub = (iso: string) => {
-    const jetzt = emp.vacationDates ?? [];
-    updateEmployee(emp.id, {
-      vacationDates: jetzt.includes(iso)
-        ? jetzt.filter((d) => d !== iso)
-        : [...jetzt, iso].sort(),
-    });
-  };
-
 
   return (
-    <div className="border-t border-slate-100 pt-3 grid gap-3 sm:grid-cols-2">
-      <div>
-        <div className="text-xs text-slate-600 mb-1.5">
-          Ngày làm trong tuần
-          {alleTage && <span className="text-slate-400"> — bỏ trống = làm mọi ngày</span>}
-        </div>
-        <div className="flex flex-wrap gap-1">
-          {WEEKDAY_ORDER.map((key) => {
-            const an = alleTage || gewaehlt.includes(key);
-            return (
-              <button
-                key={key}
-                type="button"
-                disabled={isLocked}
-                onClick={() => toggleWeekday(key)}
-                className={`rounded px-2 py-1 text-xs border transition-colors ${
-                  an
-                    ? "bg-slate-800 text-white border-slate-800"
-                    : "bg-white text-slate-400 border-slate-200 line-through"
-                }`}
-              >
-                {WEEKDAY_SHORT_VI[key]}
-              </button>
-            );
-          })}
-        </div>
-
-        {/*
-          Zwei verschiedene Dinge: oben WELCHE Tage möglich sind, hier WIE VIELE
-          davon genutzt werden. Wer sechs mögliche Tage hat, aber nur fünf
-          arbeitet, braucht diese Zahl – ohne sie plant die App alle sechs.
-        */}
-        <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
-          Số ngày làm mỗi tuần
-          <input
-            type="number"
-            min={1}
-            max={7}
-            disabled={isLocked}
-            placeholder="—"
-            value={emp.maxDaysPerWeek ?? ""}
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              updateEmployee(emp.id, {
-                maxDaysPerWeek: e.target.value === "" || n < 1 ? undefined : Math.min(7, Math.round(n)),
-              });
-            }}
-            className={`${inputClass} w-16 ${gesperrt}`}
-          />
-          <span className="text-slate-400">bỏ trống = không giới hạn</span>
-        </label>
+    <div className="flex-1 min-w-0">
+      <div className="flex items-center gap-2">
+        <span className="font-medium text-slate-900 truncate">{emp.name}</span>
+        <span className="shrink-0 rounded bg-slate-100 text-slate-600 text-[11px] px-1.5 py-0.5">
+          {employmentShortVi(emp.employmentType)}
+        </span>
+        {tooMany && <span className="shrink-0 text-amber-600 text-xs">⚠</span>}
       </div>
+      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
+        <span>
+          {stunden}h · <span className={info.ok ? "" : "text-rose-600"}>{info.text}</span>
+        </span>
+        {tage && tage.length > 0 && (
+          <span className="text-slate-400">· {tage.map((k) => WEEKDAY_SHORT_VI[k]).join(" ")}</span>
+        )}
+        {emp.maxDaysPerWeek ? (
+          <span className="text-slate-400">· {emp.maxDaysPerWeek} ngày/tuần</span>
+        ) : null}
+        {urlaubJahr > 0 ? (
+          <span className="text-slate-400">· nghỉ {urlaubJahr} ngày/năm</span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
-      <div>
-        <div className="text-xs text-slate-600 mb-1.5">
-          Nghỉ phép (Urlaub){" "}
-          <span className={zuViel ? "text-rose-600 font-medium" : "text-slate-400"}>
-            — {urlaubJahr}/{anspruch} ngày trong năm {year}
-            {zuViel && " ⚠ vượt quy định"}
-          </span>
+/** Blatt zum Anlegen ODER Bearbeiten – Handy von unten, Desktop mittig. */
+function EmployeeSheet({
+  employee,
+  year,
+  month,
+  isClosed,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  employee?: Employee;
+  year: number;
+  month: number;
+  isClosed: (iso: string) => boolean;
+  onClose: () => void;
+  onSave: (felder: Omit<Employee, "id">) => void;
+  onDelete?: () => void;
+}) {
+  const [d, setD] = useState<Draft>(() => draftFrom(employee));
+  const [urlaubOffen, setUrlaubOffen] = useState(false);
+  const [loeschFrage, setLoeschFrage] = useState(false);
+
+  const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((prev) => ({ ...prev, [k]: v }));
+
+  const stunden = Math.max(0, Math.round(Number(d.hours) || 0));
+  const info = splitInfo(stunden, d.employmentType);
+  const tooMany = stunden > WARN_HOURS;
+
+  const draftEmp: Employee = { id: "draft", ...draftToEmployee(d) };
+  const imJahr = vacationDaysInYear(draftEmp, year);
+  const anspruch = vacationEntitlement(draftEmp);
+  const imMonat = vacationDatesInMonth(draftEmp, year, month);
+  const zuVielUrlaub = imJahr > anspruch;
+
+  const toggleUrlaub = (iso: string) => {
+    setD((prev) => ({
+      ...prev,
+      vacationDates: prev.vacationDates.includes(iso)
+        ? prev.vacationDates.filter((x) => x !== iso)
+        : [...prev.vacationDates, iso].sort(),
+    }));
+  };
+
+  const alleTage = d.availableWeekdays.length === 0;
+  const toggleWeekday = (key: WeekdayKey) => {
+    const basis = alleTage ? WEEKDAY_ORDER : d.availableWeekdays;
+    set(
+      "availableWeekdays",
+      basis.includes(key) ? basis.filter((k) => k !== key) : [...basis, key],
+    );
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full sm:max-w-md max-h-[92vh] overflow-y-auto rounded-t-2xl sm:rounded-lg bg-white shadow-xl border border-slate-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between">
+          <h3 className="font-semibold text-slate-900">
+            {employee ? "Sửa nhân viên" : "Thêm nhân viên"}
+          </h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">
+            ✕
+          </button>
         </div>
 
-        <button
-          type="button"
-          disabled={isLocked}
-          onClick={() => setKalenderOffen((o) => !o)}
-          className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
-        >
-          {kalenderOffen ? "Đóng danh sách" : "Chọn ngày nghỉ"}
-          {imMonat.length > 0 && ` · ${imMonat.length} ngày trong tháng`}
-        </button>
-
-        {!kalenderOffen && imMonat.length > 0 && (
-          <div className="mt-1 text-xs text-slate-500">
-            {imMonat.map((iso) => `${Number(iso.slice(8))}.${iso.slice(5, 7)}`).join(", ")}
-          </div>
-        )}
-
-        {kalenderOffen && (
-          <div className="mt-2">
-            <VacationPicker
-              year={year}
-              month={month}
-              selected={emp.vacationDates ?? []}
-              onToggle={toggleUrlaub}
-              isClosed={isClosed}
+        <div className="px-4 py-3 space-y-4">
+          <label className="block">
+            <span className="text-xs text-slate-600">Tên</span>
+            <input
+              autoFocus={!employee}
+              className={`${inputClass} w-full mt-1`}
+              value={d.name}
+              onChange={(e) => set("name", e.target.value)}
+              placeholder="Tên nhân viên"
             />
+          </label>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-xs text-slate-600">Hình thức</span>
+              <select
+                className={`${inputClass} w-full mt-1`}
+                value={d.employmentType}
+                onChange={(e) => set("employmentType", e.target.value as EmploymentType)}
+              >
+                <option value="VOLLZEIT">Toàn thời gian</option>
+                <option value="TEILZEIT">Bán thời gian</option>
+                <option value="MINIJOB">Minijob</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs text-slate-600">Giờ định mức / tháng</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={1}
+                className={`${inputClass} w-full mt-1`}
+                value={d.hours}
+                onChange={(e) => set("hours", e.target.value)}
+              />
+            </label>
           </div>
-        )}
+          <div className={`text-xs ${info.ok ? "text-slate-500" : "text-rose-600"}`}>
+            {info.text}
+            {tooMany && <span className="text-amber-600 font-medium"> · ⚠ &gt;{WARN_HOURS}h/tháng</span>}
+          </div>
+
+          {/* Ngày làm trong tuần + số ngày/tuần */}
+          <div className="border-t border-slate-100 pt-3">
+            <div className="text-xs text-slate-600 mb-1.5">
+              Ngày làm trong tuần
+              {alleTage && <span className="text-slate-400"> — bỏ trống = làm mọi ngày</span>}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {WEEKDAY_ORDER.map((key) => {
+                const an = alleTage || d.availableWeekdays.includes(key);
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => toggleWeekday(key)}
+                    className={`rounded px-2 py-1 text-xs border transition-colors ${
+                      an
+                        ? "bg-slate-800 text-white border-slate-800"
+                        : "bg-white text-slate-400 border-slate-200 line-through"
+                    }`}
+                  >
+                    {WEEKDAY_SHORT_VI[key]}
+                  </button>
+                );
+              })}
+            </div>
+            <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+              Số ngày làm mỗi tuần
+              <input
+                type="number"
+                min={1}
+                max={7}
+                placeholder="—"
+                className={`${inputClass} w-16`}
+                value={d.maxDays}
+                onChange={(e) => set("maxDays", e.target.value)}
+              />
+              <span className="text-slate-400">bỏ trống = không giới hạn</span>
+            </label>
+          </div>
+
+          {/* Nghỉ phép */}
+          <div className="border-t border-slate-100 pt-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setUrlaubOffen((v) => !v)}
+                className="rounded border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50"
+              >
+                Nghỉ phép {urlaubOffen ? "▲" : "▼"}
+              </button>
+              <span className={zuVielUrlaub ? "text-amber-700 font-medium" : "text-slate-500"}>
+                {imJahr}/{anspruch} ngày trong năm {year}
+                {zuVielUrlaub && " — vượt quy định"}
+              </span>
+              {imMonat.length > 0 && (
+                <span className="text-slate-500">
+                  · tháng này: {imMonat.map((x) => Number(x.slice(8))).join(", ")}
+                </span>
+              )}
+            </div>
+            {urlaubOffen && (
+              <div className="mt-2">
+                <VacationPicker
+                  year={year}
+                  month={month}
+                  selected={d.vacationDates}
+                  onToggle={toggleUrlaub}
+                  isClosed={isClosed}
+                />
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Tính theo <b>ngày làm việc</b> (§ 3 BUrlG). Vượt mức chỉ <b>cảnh báo</b>.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 bg-white border-t border-slate-200 px-4 py-3">
+          {loeschFrage ? (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-slate-600">Xoá nhân viên này?</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setLoeschFrage(false)}
+                  className="rounded px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
+                >
+                  Không
+                </button>
+                <button
+                  onClick={onDelete}
+                  className="rounded bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700"
+                >
+                  Xoá
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-3">
+              {onDelete ? (
+                <button
+                  onClick={() => setLoeschFrage(true)}
+                  className="text-rose-600 hover:text-rose-800 text-sm font-medium"
+                >
+                  Xoá
+                </button>
+              ) : (
+                <span />
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={onClose}
+                  className="rounded px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+                >
+                  Huỷ
+                </button>
+                <button
+                  onClick={() => onSave(draftToEmployee(d))}
+                  className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+                >
+                  Lưu
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
