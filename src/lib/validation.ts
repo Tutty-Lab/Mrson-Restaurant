@@ -12,6 +12,8 @@ import {
 } from "../types";
 import { calculatePause } from "./time";
 import { maxConsecutiveRun } from "./consecutive";
+import { WEEKDAY_LABELS_VI, type WeekdayKey } from "./demand";
+import { MAX_SHIFT_HOURS } from "./scheduler";
 
 export type ValidationError = {
   employeeId?: string;
@@ -47,6 +49,32 @@ export type ValidationResult = {
 /** Ansage des Chefs: eine Schicht dauert höchstens 8 Stunden. */
 const MAX_PAID_MINUTES = 8 * 60;
 const MAX_CONSECUTIVE_DAYS = 6;
+
+const WOCHENTAG_REIHENFOLGE: WeekdayKey[] = [
+  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+];
+
+/**
+ * Warum fehlen Stunden? Der Planer verteilt schon das Maximum, das die Regeln
+ * hergeben – die Lücke kommt aus den Grenzen der Person selbst. „Tháng này
+ * không đủ ngày" allein ließ den Betrieb ratlos zurück; hier steht, WELCHE
+ * Grenze greift und was man ändern kann.
+ */
+function grundFehlstunden(emp: Employee): string {
+  const grenzen: string[] = [];
+  if (emp.availableWeekdays?.length) {
+    const tage = WOCHENTAG_REIHENFOLGE.filter((d) => emp.availableWeekdays!.includes(d))
+      .map((d) => WEEKDAY_LABELS_VI[d]);
+    grenzen.push(`chỉ làm ${tage.join(" + ")}`);
+  }
+  if (emp.maxDaysPerWeek) grenzen.push(`tối đa ${emp.maxDaysPerWeek} ngày/tuần`);
+  grenzen.push(`mỗi ca tối đa ${MAX_SHIFT_HOURS}h`);
+  if (emp.employmentType === "MINIJOB") grenzen.push(`minijob tối đa ${MINIJOB_MAX_WEEKLY_HOURS}h/tuần`);
+  return (
+    `Tháng này không xếp thêm được vì ${grenzen.join(", ")}. ` +
+    `Muốn đủ giờ thì giảm định mức hoặc cho làm thêm ngày.`
+  );
+}
 
 export function validateSchedule(
   employees: Employee[],
@@ -188,7 +216,7 @@ export function validateSchedule(
         // Zu VIEL wäre ein echter Fehler im Plan.
         severity: zuWenig ? "warning" : "error",
         message: zuWenig
-          ? `${emp.name}: mới xếp được ${assignedMinutes / 60}h / ${emp.targetMinutes / 60}h — tháng này không đủ ngày cho định mức đó.`
+          ? `${emp.name}: mới xếp được ${assignedMinutes / 60}h / ${emp.targetMinutes / 60}h. ${grundFehlstunden(emp)}`
           : `${emp.name}: xếp quá giờ định mức: ${assignedMinutes / 60} h thay vì ${emp.targetMinutes / 60} h.`,
       });
     }

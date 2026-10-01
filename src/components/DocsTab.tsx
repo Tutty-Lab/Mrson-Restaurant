@@ -303,9 +303,9 @@ export function DocsTab() {
         </ul>
       </Section>
 
-      <Section title="6) In lịch và khoá tháng">
+      <Section title="6) Xuất lịch và khoá tháng">
         <p>
-          Ở tab <b>Bảng chấm công</b> có mục <b>In lịch làm việc</b>: in <b>cả tháng</b> hoặc in{" "}
+          Ở tab <b>Bảng chấm công</b>, mục <b>Xuất file</b> xuất <b>Lịch làm việc</b> ra PDF: <b>cả tháng</b> hoặc{" "}
           <b>từng tuần</b>.
         </p>
         <ul className="list-disc pl-5 space-y-1">
@@ -319,13 +319,13 @@ export function DocsTab() {
           </li>
         </ul>
         <p>
-          <b>In một tuần bất kỳ sẽ khoá lịch cả tháng đó.</b> Sau khi khoá: không sửa được ca, không
-          tạo lại lịch, không đổi nhân viên — nhưng vẫn in được. Mục đích là để bản giấy đang treo ở
-          quán luôn khớp với dữ liệu trong hệ thống khi bị kiểm tra. In cả tháng thì không khoá gì.
+          <b>Xuất lịch một tuần bất kỳ sẽ khoá lịch cả tháng đó.</b> Sau khi khoá: không sửa được ca, không
+          tạo lại lịch, không đổi nhân viên — nhưng vẫn xuất PDF được. Mục đích là để bản giấy đang treo ở
+          quán luôn khớp với dữ liệu trong hệ thống khi bị kiểm tra. Xuất cả tháng thì không khoá gì.
         </p>
         <p className="text-slate-600">
           Cần sửa thì bấm <b>Mở khoá</b> ở ngay khung cảnh báo (tab Bảng chấm công), xác nhận một
-          lần nữa. Sửa xong nhớ <b>in lại tuần đó và thay bản cũ</b>.
+          lần nữa. Sửa xong nhớ <b>xuất lại tuần đó, in ra và thay bản cũ</b>.
         </p>
       </Section>
 

@@ -108,7 +108,7 @@ const SHIFT_HOURS_DESC = [8, 7, 6, 5, 4, 3] as const;
  * (22 Tage × 8 h = 176 h). In kurzen Monaten kann das knapp nicht aufgehen –
  * gemeldet wird es dann als Warnung, nicht als Fehler.
  */
-const MAX_SHIFT_HOURS = 8;
+export const MAX_SHIFT_HOURS = 8;
 
 /** Kürzeste zulässige Schicht in Minuten – darunter geht ein Soll nicht auf. */
 const MIN_SHIFT_MINUTES = 3 * 60;
@@ -921,6 +921,55 @@ function dateCost(state: SchedulerState, isoDate: string): number {
   return Math.abs(
     state.dateState.get(isoDate)!.totalPaid - state.rawTarget.get(isoDate)!,
   );
+}
+
+/**
+ * Nachschlag für alle, die ihr Soll nicht erreicht haben: bestehende Dienste
+ * um je eine Stunde verlängern, kürzester Dienst zuerst.
+ *
+ * Gebraucht für die Kräfte mit festen Tagen (z. B. nur sonntags). Die Runden
+ * oben verteilen das Soll in Stücken, und an einem vollen Sonntag wird ein
+ * Stück auch mal auf 7 h gekürzt, damit für die anderen Platz bleibt. Danach
+ * gibt es für diese Person keinen freien Tag mehr – die fehlende Stunde blieb
+ * liegen, obwohl der Dienst noch eine Stunde länger sein dürfte (31 h statt
+ * 32 h aus vier Sonntagen).
+ *
+ * Eingehalten wird alles, was auch beim Platzieren gilt: höchstens
+ * MAX_SHIFT_HOURS, passt ins Tagesfenster, Minijob-Wochendeckel, nie über das
+ * Soll. Neue Arbeitstage entstehen hier nicht.
+ */
+function fillShortfalls(state: SchedulerState): void {
+  for (const employee of state.byId.values()) {
+    for (let guard = 0; guard < 60 && state.remaining.get(employee.id)! >= 60; guard++) {
+      const own = state.shifts
+        .filter((s) => s.employeeId === employee.id)
+        .sort((a, b) => a.paidMinutes - b.paidMinutes || a.date.localeCompare(b.date));
+      let gewachsen = false;
+      for (const shift of own) {
+        const day = state.dayOf(shift.date);
+        const hours = shift.paidMinutes / 60 + 1;
+        if (hours > Math.min(MAX_SHIFT_HOURS, maxShiftHoursForWindow(windowLength(day)))) continue;
+        if (weeklyRoomLeft(state, employee, shift.date) < 1) continue;
+        const type: TemplateType = shift.shiftType === "LATE" ? "LATE" : "EARLY";
+        const tpl = getShiftTemplate(hours, type, day.window.startMinutes, day.window.endMinutes);
+        if (tpl.paidMinutes !== hours * 60) continue;
+        removeShift(state, shift);
+        applyShift(state, {
+          ...shift,
+          id: nextShiftId(),
+          startMinutes: tpl.startMinutes,
+          endMinutes: tpl.endMinutes,
+          pauseMinutes: tpl.pauseMinutes,
+          paidMinutes: tpl.paidMinutes,
+          shiftType: tpl.type,
+        });
+        state.remaining.set(employee.id, state.remaining.get(employee.id)! - 60);
+        gewachsen = true;
+        break;
+      }
+      if (!gewachsen) break;
+    }
+  }
 }
 
 function removeShift(state: SchedulerState, shift: Shift): void {
@@ -1739,6 +1788,9 @@ export function generateSchedule(input: GenerateInput): Shift[] {
       throw new Error(buildUnmetMessage(state, unmet, dates, dayOf));
     }
   }
+
+  // Wer noch unter dem Soll liegt, bekommt längere Dienste an seinen Tagen.
+  if (unmet.length > 0) fillShortfalls(state);
 
   repairDemand(state, employeesById);
   // Erst danach: die Stundenbilanz steht, jetzt die Form für die Stoßzeit.

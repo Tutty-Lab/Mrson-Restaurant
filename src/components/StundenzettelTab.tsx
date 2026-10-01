@@ -1,9 +1,8 @@
 import { useMemo, useState } from "react";
-import { flushSync } from "react-dom";
 import type { UseScheduleReturn } from "../hooks/useSchedule";
 import type { Employee } from "../types";
 import { StundenzettelPage } from "./StundenzettelPage";
-import { SchedulePrintPage, type SchedulePrintLayout } from "./SchedulePrintPage";
+import type { SchedulePrintLayout } from "./SchedulePrintPage";
 import { buildDienstplanPdf, buildStundenzettelPdf, savePdf, safeFileName } from "../lib/pdf";
 import { weeksOfMonth } from "../lib/weeks";
 import { datesOfMonth } from "../lib/demand";
@@ -34,16 +33,10 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
     [schedule.year, schedule.month],
   );
 
-  // Druck-/PDF-Bühne.
-  const [printList, setPrintList] = useState<Employee[] | null>(null);
-  const [scheduleRange, setScheduleRange] = useState<ScheduleRange | null>(null);
+  // Es gibt nur noch die PDF-Ausgabe. Der Druck über den Browser ist entfallen
+  // (Wunsch des Betriebs) – das PDF wird ohnehin auf jedem Gerät gleich.
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfProgress, setPdfProgress] = useState<string>("");
-
-  // Zeitraum für den Stundenzettel-Ausdruck: gesetzt => Wochen-Zettel (nur diese
-  // Tage), leer => ganzer Monat.
-  const [szDates, setSzDates] = useState<string[] | undefined>(undefined);
-  const [szLabel, setSzLabel] = useState<string | undefined>(undefined);
 
   /** Zweiter Klick für das Entsperren – ohne native Dialoge, siehe unten. */
   const [confirmUnlock, setConfirmUnlock] = useState(false);
@@ -60,34 +53,6 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
     who === "all" ? schedule.employees[0] ?? null : chosenEmployees[0] ?? null;
   const employeeIds = who === "all" ? undefined : [who];
   const whoTag = who === "all" ? "tat_ca" : safeFileName(previewEmployee?.name ?? who);
-
-  // Vùng in phải được render TRƯỚC khi gọi print, và print phải nằm trong cùng
-  // thao tác chạm (mobile chặn print ngoài gesture). flushSync render đồng bộ.
-  function doPrint(list: Employee[], sz?: { dates?: string[]; label?: string }) {
-    if (list.length === 0) return;
-    flushSync(() => {
-      setScheduleRange(null);
-      setSzDates(sz?.dates);
-      setSzLabel(sz?.label);
-      setPrintList(list);
-    });
-    window.print();
-  }
-
-  /**
-   * Dienstplan drucken. Der Wochen-Ausdruck sperrt den Monat: das Blatt hängt
-   * danach im Laden und muss mit dem Stand im System übereinstimmen. Der
-   * Monatsausdruck ist nur eine Übersicht und sperrt nichts.
-   */
-  function printSchedule(range: ScheduleRange) {
-    if (range.dates.length === 0) return;
-    flushSync(() => {
-      setPrintList(null);
-      setScheduleRange(range);
-    });
-    window.print();
-    if (range.weekStart) markWeekPrinted(range.weekStart);
-  }
 
   /**
    * Stundenzettel-PDF: echtes Vektor-PDF direkt aus den Daten (jsPDF zeichnet
@@ -125,7 +90,9 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
 
   /**
    * PDF des Dienstplans (Monat oder Woche) – ebenfalls gezeichnet, nicht
-   * fotografiert. Eine Woche sperrt danach den Monat.
+   * fotografiert. Eine Woche sperrt danach den Monat: das Blatt hängt im Laden
+   * und muss mit dem Stand im System übereinstimmen. Der Monat ist nur eine
+   * Übersicht und sperrt nichts.
    */
   function doPdfSchedule(range: ScheduleRange, filename: string) {
     if (range.dates.length === 0 || pdfBusy) return;
@@ -173,20 +140,6 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
     return { dates: w.dates, label: `Woche ${w.label}${schedule.year}` };
   }
 
-  function onPrint() {
-    if (what === "stundenzettel") {
-      doPrint(chosenEmployees);
-      return;
-    }
-    if (what.startsWith("sz-")) {
-      const sz = szWeekFor(what.slice(3));
-      if (sz) doPrint(chosenEmployees, sz);
-      return;
-    }
-    const range = scheduleRangeFor(what);
-    if (range) printSchedule(range);
-  }
-
   function onPdf() {
     if (what === "stundenzettel") {
       void doPdf(chosenEmployees, `Stundenzettel_${whoTag}_${monthTag}.pdf`);
@@ -206,11 +159,6 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
     void doPdfSchedule(range, `Dienstplan_${whoTag}_${suffix}_${monthTag}.pdf`);
   }
 
-  // Vùng in KHÔNG được dọn theo sự kiện "afterprint": trên Android sự kiện đó
-  // bắn ra ngay khi gọi window.print(), trước lúc trình duyệt dựng xong trang
-  // — nội dung bị xoá mất và tờ in ra trắng. Vùng này vốn đã ẩn trên màn hình
-  // nên cứ để nguyên; lần in sau sẽ ghi đè bằng danh sách mới.
-
   if (schedule.employees.length === 0) {
     return (
       <div className="no-print rounded bg-white border border-slate-200 p-6 text-center text-slate-400">
@@ -225,9 +173,9 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
     <>
       {/* Điều khiển (không in) */}
       <div className="no-print">
-        {/* ---- In & Xuất ---- */}
+        {/* ---- Xuất file ---- */}
         <div className="rounded-lg border border-slate-200 bg-white p-3 mb-4">
-          <div className="text-sm font-medium text-slate-700 mb-2">In &amp; Xuất file</div>
+          <div className="text-sm font-medium text-slate-700 mb-2">Xuất file</div>
 
           <div className="flex flex-wrap items-end gap-3">
             {/* WER */}
@@ -267,7 +215,7 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
                   return (
                     <option key={w.weekStart} value={w.weekStart}>
                       Lịch làm việc — tuần {w.label}
-                      {printed ? " ✓ (đã in)" : ""}
+                      {printed ? " ✓ (đã xuất)" : ""}
                     </option>
                   );
                 })}
@@ -276,13 +224,6 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
 
             {/* Hành động */}
             <div className="flex items-center gap-2">
-              <button
-                disabled={pdfBusy || !hasSchedule}
-                onClick={onPrint}
-                className="rounded border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-40"
-              >
-                🖨 In
-              </button>
               <button
                 disabled={pdfBusy || !hasSchedule}
                 onClick={onPdf}
@@ -307,21 +248,21 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
           <p className="mt-2 text-xs text-slate-500">
             <b>Bảng chấm công (Stundenzettel)</b> theo mẫu tiếng Đức để nộp — một tờ mỗi người, chọn
             cả tháng hoặc từng tuần. <b>Lịch làm việc</b> là lịch treo ở quán (cả tháng hoặc từng
-            tuần, cho cả quán hoặc một người). <b>In lịch một tuần sẽ khóa lịch tháng</b> để bản
+            tuần, cho cả quán hoặc một người). <b>Xuất lịch một tuần sẽ khóa lịch tháng</b> để bản
             treo luôn khớp với hệ thống. Xuất PDF tải thẳng file về máy; trên điện thoại mở bảng
-            Chia sẻ.
+            Chia sẻ, từ đó in hoặc gửi đi.
           </p>
 
           {isLocked && (
             <div className="mt-3 rounded bg-amber-50 border border-amber-200 text-amber-900 text-sm px-3 py-2">
               <div className="font-medium">
-                Lịch tháng này đã khóa vì đã in
+                Lịch tháng này đã khóa vì đã xuất lịch tuần
                 {schedule.lockedAt &&
                   ` lúc ${new Date(schedule.lockedAt).toLocaleString("vi-VN")}`}
                 .
               </div>
               <div className="mt-0.5">
-                Không sửa được ca, không đổi nhân viên. Vẫn in được bình thường. (Tạo lại lịch ở tab
+                Không sửa được ca, không đổi nhân viên. Vẫn xuất PDF được bình thường. (Tạo lại lịch ở tab
                 „Lịch làm việc" cũng sẽ mở khóa.)
               </div>
 
@@ -341,8 +282,8 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
               ) : (
                 <div className="mt-2 rounded border border-amber-300 bg-white px-3 py-2">
                   <div className="text-amber-900">
-                    Mở khóa lịch tháng này? Bản đã in ở quán sẽ không còn khớp với hệ thống. Sau
-                    khi sửa, hãy in lại tuần đó và thay bản cũ.
+                    Mở khóa lịch tháng này? Bản đã treo ở quán sẽ không còn khớp với hệ thống. Sau
+                    khi sửa, hãy xuất lại tuần đó và thay bản cũ.
                   </div>
                   <div className="mt-2 flex gap-2">
                     <button
@@ -378,29 +319,6 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
               <StundenzettelPage schedule={schedule} employee={previewEmployee} />
             </div>
           </>
-        )}
-      </div>
-
-      {/* Vùng in ẩn: hoặc các tờ chấm công, hoặc lịch làm việc */}
-      <div className="print-area">
-        {scheduleRange ? (
-          <SchedulePrintPage
-            schedule={schedule}
-            dates={scheduleRange.dates}
-            title={scheduleRange.title}
-            layout={scheduleRange.layout}
-            employeeIds={scheduleRange.employeeIds}
-          />
-        ) : (
-          (printList ?? []).map((emp) => (
-            <StundenzettelPage
-              key={emp.id}
-              schedule={schedule}
-              employee={emp}
-              dates={szDates}
-              periodLabel={szLabel}
-            />
-          ))
         )}
       </div>
 
