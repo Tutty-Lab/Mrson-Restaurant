@@ -11,7 +11,8 @@ import { validateSchedule } from "../validation";
 import { maxConsecutiveRun } from "../consecutive";
 import { SEED_MONTHS, totalTargetHours } from "../seedData";
 import { publicHolidays } from "../holidays";
-import { DEFAULT_WORK_HOURS, resolveDay } from "../workHours";
+import { DEFAULT_WORK_HOURS, effectiveWeekdayKey, resolveDay } from "../workHours";
+import { peaksFor } from "../scheduler";
 import { calculatePause } from "../time";
 import { WEEKDAY_SHORT_DE } from "../demand";
 
@@ -128,9 +129,12 @@ describe.each(runs)("Seed-Monat: $seed.label", ({ seed, shifts, analysis }) => {
     expect(bad.length).toBeLessThanOrEqual(seed.maxPeakGaps ?? 0);
   });
 
-  it("Gegenprobe Minute für Minute: 18–21 Uhr nie unter 2 Personen", () => {
+  it("Gegenprobe Minute für Minute: 18–21 Uhr nie unter 2 Personen (Fr/Sa/So, Feiertage)", () => {
     // Unabhängig von minCoverageOver – stumpf jede Minute zählen. Wäre die
     // Abtastung dort falsch, meldete die Auswertung fälschlich „alles grün".
+    // Gezählt wird nur an Tagen, an denen die Abendspitze gilt (Fr/Sa/So,
+    // Feiertage wie Sonntag) – so steht es in PEAK_WINDOWS.
+    const holidays = publicHolidays(seed.year);
     const byDate = new Map<string, typeof shifts>();
     for (const s of shifts) {
       const list = byDate.get(s.date);
@@ -140,6 +144,7 @@ describe.each(runs)("Seed-Monat: $seed.label", ({ seed, shifts, analysis }) => {
 
     const thin: string[] = [];
     for (const [date, onDay] of byDate) {
+      if (peaksFor({ weekday: effectiveWeekdayKey(date, holidays) }).length === 0) continue;
       for (const [from, to, label] of [[18 * 60, 21 * 60, "Abend"]] as const) {
         for (let t = from; t < to; t++) {
           const staff = onDay.filter((s) => s.startMinutes <= t && s.endMinutes > t).length;

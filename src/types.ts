@@ -38,6 +38,20 @@ export const MINIJOB_MAX_WEEKLY_HOURS = 10;
 export const MINIJOB_MAX_MONTHLY_HOURS = Math.floor((MINIJOB_MAX_WEEKLY_HOURS * 52) / 12);
 
 /**
+ * Ausnahme vom Wochendeckel, nur um das Monats-Soll zu erreichen.
+ *
+ * Der Betrieb hat die Minijobs mit „rund 10 h die Woche" beschrieben, daraus
+ * stammen die 43 h im Monat. Ein Monat mit Feiertagen oder angebrochenen
+ * Wochen hat aber nur vier nutzbare Wochen: 4 x 10 h = 40 h, die 43 h gehen
+ * dann rechnerisch nicht auf (Dezember 2026 bei den Fr/So- und Sa/So-Kräften).
+ *
+ * Geplant wird weiter mit 10 h. Erst der Nachschlag am Ende (fillShortfalls)
+ * darf eine Woche bis hierhin verlängern – und nur für jemanden, der sonst
+ * unter seinem Vertrag bliebe. Soll das nicht sein: auf 10 setzen.
+ */
+export const MINIJOB_FLEX_WEEKLY_HOURS = 12;
+
+/**
  * Jahresurlaub in ARBEITSTAGEN, nicht in Stunden.
  *
  * So rechnet das Bundesurlaubsgesetz: der Anspruch hängt daran, an wie vielen

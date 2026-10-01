@@ -6,6 +6,7 @@ import { vacationDaysInYear, vacationEntitlement } from "./availability";
 import {
   MAX_EMPLOYEES,
   MINIJOB_MAX_MONTHLY_HOURS,
+  MINIJOB_FLEX_WEEKLY_HOURS,
   MINIJOB_MAX_WEEKLY_HOURS,
   type Employee,
   type Shift,
@@ -69,7 +70,9 @@ function grundFehlstunden(emp: Employee): string {
   }
   if (emp.maxDaysPerWeek) grenzen.push(`tối đa ${emp.maxDaysPerWeek} ngày/tuần`);
   grenzen.push(`mỗi ca tối đa ${MAX_SHIFT_HOURS}h`);
-  if (emp.employmentType === "MINIJOB") grenzen.push(`minijob tối đa ${MINIJOB_MAX_WEEKLY_HOURS}h/tuần`);
+  if (emp.employmentType === "MINIJOB") {
+    grenzen.push(`minijob khoảng ${MINIJOB_MAX_WEEKLY_HOURS}h/tuần (tối đa ${MINIJOB_FLEX_WEEKLY_HOURS}h)`);
+  }
   return (
     `Tháng này không xếp thêm được vì ${grenzen.join(", ")}. ` +
     `Muốn đủ giờ thì giảm định mức hoặc cho làm thêm ngày.`

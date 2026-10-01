@@ -1,6 +1,7 @@
 import type { UseScheduleReturn } from "../hooks/useSchedule";
 import { minutesToDecimalHours, minutesToTime } from "../lib/time";
 import { PEAK_WINDOWS } from "../lib/scheduler";
+import { WEEKDAY_SHORT_VI } from "../lib/demand";
 
 function Stat({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
@@ -109,7 +110,8 @@ export function Dashboard({ store }: { store: UseScheduleReturn }) {
             {peakGaps.length} ngày chưa đủ người trong giờ cao điểm (
             {PEAK_WINDOWS.map(
               (p) =>
-                `${minutesToTime(p.startMinutes)}–${minutesToTime(p.endMinutes)}: ${p.minStaff} người`,
+                `${minutesToTime(p.startMinutes)}–${minutesToTime(p.endMinutes)}: ${p.minStaff} người` +
+                (p.weekdays ? ` (${p.weekdays.map((d) => WEEKDAY_SHORT_VI[d]).join(", ")}, ngày lễ)` : ""),
             ).join(", ")}
             ).
           </div>

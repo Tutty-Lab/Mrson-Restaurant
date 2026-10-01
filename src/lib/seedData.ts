@@ -110,19 +110,19 @@ const kopie = (): Employee[] => BELEGSCHAFT.map((e) => ({ ...e }));
  * Die vier Minijob-Kräfte sind auf Fr/Sa/So festgelegt; an den drei Tagen
  * dazwischen stehen nur Hà Thị Chăm und Phạm Minh Hạnh zur Verfügung. Seit
  * eine Schicht höchstens 8 Stunden dauert (8,5 h Anwesenheit), lässt sich
- * 11:30–22:00 mit zweien nur noch lückenlos abdecken, wenn sie 11:30 und
- * 13:30 anfangen – dann ist von 20:00 bis 21:00 nur einer da.
+ * 11:30–22:00 mit zweien nur so abdecken, dass sie 11:30 und 13:30 anfangen –
+ * von 20:00 bis 21:00 ist dann nur einer da.
  *
- * Beides zugleich geht nicht: entweder steht der Laden mittags eine Stunde
- * leer, oder die Abendspitze hat abends eine Stunde lang eine Person statt
- * zwei. Der Plan wählt das Zweite; der offene, unbesetzte Laden ist der
- * schwerere Fehler, und die Abendspitze ist bis heute eine Annahme (siehe
- * PEAK_WINDOWS), keine Ansage des Chefs.
+ * Früher galt die Abendspitze jeden Tag; das ergab zwölf verfehlte Tage im
+ * Monat. Die Spitze gilt inzwischen nur Fr/Sa/So (siehe PEAK_WINDOWS) – das
+ * ist, was der Betrieb gesagt hat: „voll am Wochenende". Seitdem hält jeder
+ * Seed-Monat die Spitze an allen Tagen; die Schwelle steht deshalb auf 0.
  *
- * 12 = vier Wochen à drei Tage. Wird das nicht gewünscht, braucht der Betrieb
- * an Di/Mi/Do eine dritte Kraft oder einen späteren Ladenöffnungsbeginn.
+ * Offen bleiben einzelne Feiertage an einem Donnerstag (Neujahr 2026,
+ * Christi Himmelfahrt, Fronleichnam): sie zählen wie Sonntag, arbeiten dürfen
+ * aber nur die beiden Vollzeitkräfte. Keiner davon liegt in einem Seed-Monat.
  */
-const DUENNE_WOCHENMITTE = 12;
+const DUENNE_WOCHENMITTE = 0;
 
 export const SEED_MONTHS: SeedMonth[] = [
   { year: 2026, month: 8, label: "August 2026", employees: kopie(), maxPeakGaps: DUENNE_WOCHENMITTE },

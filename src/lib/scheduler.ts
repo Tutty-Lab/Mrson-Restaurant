@@ -16,7 +16,7 @@
 //  - Token-Dauer wird nie verändert  => monatliches Soll bleibt exakt
 // ============================================================================
 
-import { MINIJOB_MAX_WEEKLY_HOURS, type Employee, type Shift } from "../types";
+import { MINIJOB_FLEX_WEEKLY_HOURS, MINIJOB_MAX_WEEKLY_HOURS, type Employee, type Shift } from "../types";
 import {
   DAY_WEIGHTS,
   LATE_SHIFT_RATIOS,
@@ -157,6 +157,8 @@ export type PeakWindow = {
   startMinutes: number;
   endMinutes: number;
   minStaff: number;
+  /** Nur an diesen (effektiven) Wochentagen; fehlt = jeden Tag. */
+  weekdays?: readonly WeekdayKey[];
 };
 
 export const PEAK_WINDOWS: readonly PeakWindow[] = [
@@ -165,8 +167,29 @@ export const PEAK_WINDOWS: readonly PeakWindow[] = [
   // „voll am Wochenende" – über die Uhrzeit wurde nichts gesagt. Falls die
   // Mittagszeit ebenfalls doppelt besetzt sein soll, kommt hier eine zweite
   // Zeile dazu; alles andere passt sich automatisch an.
-  { label: "Abend", startMinutes: 18 * 60, endMinutes: 21 * 60, minStaff: 2 },
+  //
+  // Nur Fr/Sa/So (Feiertage zählen als Sonntag) – das ist, was der Betrieb
+  // gesagt hat. Galt die Spitze jeden Tag, war sie Di–Do unerfüllbar: dort
+  // arbeiten nur die beiden Vollzeitkräfte (die Minijobs sind auf Fr/Sa/So
+  // festgelegt), und mit höchstens 8 h je Dienst geht die Öffnerin um 20:00,
+  // wenn die Schließerin erst um 13:30 kommen darf. Ergebnis waren zwölf bis
+  // dreizehn „Stoßzeit verfehlt"-Warnungen im Monat für eine Vorgabe, die es
+  // nie gab.
+  {
+    label: "Abend",
+    startMinutes: 18 * 60,
+    endMinutes: 21 * 60,
+    minStaff: 2,
+    weekdays: ["friday", "saturday", "sunday"],
+  },
 ];
+
+/** Die Stoßzeiten, die an dem Tag dieses Fensters gelten. */
+export function peaksFor(window: { weekday?: WeekdayKey }): readonly PeakWindow[] {
+  const tag = window.weekday;
+  if (!tag) return PEAK_WINDOWS;
+  return PEAK_WINDOWS.filter((peak) => !peak.weekdays || peak.weekdays.includes(tag));
+}
 
 /** Wie viele Leute sind zum Zeitpunkt `t` anwesend (Anwesenheit inkl. Pause)? */
 function coverageAt(shifts: Shift[], t: number): number {
@@ -196,9 +219,12 @@ export function minCoverageOver(shifts: Shift[], from: number, to: number): numb
  * 0 = beide Spitzen sind ausreichend besetzt. Spitzen, die gar nicht ins
  * Arbeitszeit-Fenster fallen, zählen nicht mit.
  */
-export function peakDeficit(shifts: Shift[], window: { startMinutes: number; endMinutes: number }): number {
+export function peakDeficit(
+  shifts: Shift[],
+  window: { startMinutes: number; endMinutes: number; weekday?: WeekdayKey },
+): number {
   let deficit = 0;
-  for (const peak of PEAK_WINDOWS) {
+  for (const peak of peaksFor(window)) {
     const from = Math.max(peak.startMinutes, window.startMinutes);
     const to = Math.min(peak.endMinutes, window.endMinutes);
     if (to <= from) continue; // Spitze liegt außerhalb der Arbeitszeit
@@ -296,7 +322,8 @@ const coverCache = new Map<string, number[]>();
  * und zwar mit derselben Anordnungslogik, die später auch real läuft.
  */
 export function cheapestPeakCover(window: DayWindow): number[] {
-  const key = `${window.startMinutes}-${window.endMinutes}`;
+  // Die Stoßzeit hängt am Wochentag – sie gehört deshalb in den Schlüssel.
+  const key = `${window.startMinutes}-${window.endMinutes}-${peaksFor(window).map((p) => p.label).join(",")}`;
   const cached = coverCache.get(key);
   if (cached) return cached;
 
@@ -934,9 +961,10 @@ function dateCost(state: SchedulerState, isoDate: string): number {
  * liegen, obwohl der Dienst noch eine Stunde länger sein dürfte (31 h statt
  * 32 h aus vier Sonntagen).
  *
- * Eingehalten wird alles, was auch beim Platzieren gilt: höchstens
- * MAX_SHIFT_HOURS, passt ins Tagesfenster, Minijob-Wochendeckel, nie über das
- * Soll. Neue Arbeitstage entstehen hier nicht.
+ * Eingehalten wird: höchstens MAX_SHIFT_HOURS, passt ins Tagesfenster, nie
+ * über das Soll, keine neuen Arbeitstage. Minijobs dürfen hier eine Woche bis
+ * MINIJOB_FLEX_WEEKLY_HOURS verlängern – nur so geht das Soll in Monaten mit
+ * vier nutzbaren Wochen auf.
  */
 function fillShortfalls(state: SchedulerState): void {
   for (const employee of state.byId.values()) {
@@ -949,7 +977,12 @@ function fillShortfalls(state: SchedulerState): void {
         const day = state.dayOf(shift.date);
         const hours = shift.paidMinutes / 60 + 1;
         if (hours > Math.min(MAX_SHIFT_HOURS, maxShiftHoursForWindow(windowLength(day)))) continue;
-        if (weeklyRoomLeft(state, employee, shift.date) < 1) continue;
+        // Minijob: hier darf die Woche bis MINIJOB_FLEX_WEEKLY_HOURS gehen, weil
+        // es nur um das Erreichen des Vertrags geht (siehe types.ts).
+        if (
+          employee.employmentType === "MINIJOB" &&
+          weeklyHoursSoFar(state, employee.id, shift.date) + 1 > MINIJOB_FLEX_WEEKLY_HOURS
+        ) continue;
         const type: TemplateType = shift.shiftType === "LATE" ? "LATE" : "EARLY";
         const tpl = getShiftTemplate(hours, type, day.window.startMinutes, day.window.endMinutes);
         if (tpl.paidMinutes !== hours * 60) continue;
@@ -1469,7 +1502,7 @@ function candidateStarts(shift: Shift, window: DayWindow): number[] {
   if (latest < window.startMinutes) return [window.startMinutes];
 
   const out = new Set<number>([window.startMinutes, latest]);
-  for (const peak of PEAK_WINDOWS) {
+  for (const peak of peaksFor(window)) {
     const from = Math.max(peak.startMinutes, window.startMinutes);
     const to = Math.min(peak.endMinutes, window.endMinutes);
     if (to <= from || presence < to - from) continue;

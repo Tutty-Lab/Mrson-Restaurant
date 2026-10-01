@@ -6,6 +6,7 @@ import {
 } from "../lib/demand";
 import { SHIFT_LENGTHS } from "../lib/shifts";
 import { PEAK_WINDOWS } from "../lib/scheduler";
+import { WEEKDAY_SHORT_VI } from "../lib/demand";
 import { calculatePause, minutesToTime, presenceFromPaid } from "../lib/time";
 
 const WEEKDAY_ORDER: WeekdayKey[] = [
@@ -192,7 +193,8 @@ export function DocsTab() {
           Giờ cao điểm:{" "}
           {PEAK_WINDOWS.map(
             (p) =>
-              `${minutesToTime(p.startMinutes)}–${minutesToTime(p.endMinutes)} cần ít nhất ${p.minStaff} người`,
+              `${minutesToTime(p.startMinutes)}–${minutesToTime(p.endMinutes)} cần ít nhất ${p.minStaff} người` +
+              (p.weekdays ? ` (${p.weekdays.map((d) => WEEKDAY_SHORT_VI[d]).join(", ")}, ngày lễ)` : ""),
           ).join(" · ")}
           , và phải đủ <b>suốt cả khung</b> chứ không chỉ tại một thời điểm. Mở cửa và đóng cửa thì{" "}
           <b>một người là đủ</b>.

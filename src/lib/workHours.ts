@@ -7,7 +7,16 @@
 
 import { parseIsoDate, weekdayKeyOf, type WeekdayKey } from "./demand";
 
-export type DayWindow = { startMinutes: number; endMinutes: number };
+export type DayWindow = {
+  startMinutes: number;
+  endMinutes: number;
+  /**
+   * Effektiver Wochentag des Tages (Feiertag = Sonntag). Setzt resolveDay;
+   * daran hängt, welche Stoßzeiten an diesem Tag gelten (PeakWindow.weekdays).
+   * Fehlt er, gelten alle Stoßzeiten – so bleiben Fenster ohne Datum gültig.
+   */
+  weekday?: WeekdayKey;
+};
 
 export type WorkHoursConfig = {
   perWeekday: Record<WeekdayKey, DayWindow>;
@@ -100,12 +109,18 @@ export function resolveDay(
   if (ov?.closed) return { closed: true, window: { startMinutes: 0, endMinutes: 0 } };
   // Ein Override mit eigenen Zeiten öffnet den Tag auch dann, wenn der
   // Wochentag sonst geschlossen wäre (z.B. Sonderöffnung an einem Sonntag).
-  if (ov?.window) return { closed: false, window: ov.window };
+  if (ov?.window) {
+    return { closed: false, window: { ...ov.window, weekday: effectiveWeekdayKey(isoDate, holidays) } };
+  }
   const weekday = weekdayKeyOf(parseIsoDate(isoDate));
   if (config.closedWeekdays?.[weekday]) {
     return { closed: true, window: { startMinutes: 0, endMinutes: 0 } };
   }
-  return { closed: false, window: resolveWorkWindow(config, isoDate, holidays) };
+  // Kopie mit Wochentag – das Fenster aus der Konfiguration bleibt unberührt.
+  return {
+    closed: false,
+    window: { ...resolveWorkWindow(config, isoDate, holidays), weekday: effectiveWeekdayKey(isoDate, holidays) },
+  };
 }
 
 /** Ist der Laden an diesem Datum geschlossen? (für die Anzeige in der UI). */

@@ -15,7 +15,7 @@ import {
   weekdayKeyOf,
   type WeekdayKey,
 } from "./demand";
-import { PEAK_WINDOWS, minCoverageOver } from "./scheduler";
+import { minCoverageOver, peaksFor } from "./scheduler";
 import { publicHolidays } from "./holidays";
 import {
   effectiveWeekdayKey,
@@ -109,7 +109,7 @@ export function analyzeSchedule(input: AnalyzeInput): ScheduleAnalysis {
 
     const peaks: PeakCoverage[] = [];
     if (!day.closed) {
-      for (const peak of PEAK_WINDOWS) {
+      for (const peak of peaksFor(day.window)) {
         const from = Math.max(peak.startMinutes, day.window.startMinutes);
         const to = Math.min(peak.endMinutes, day.window.endMinutes);
         if (to <= from) continue; // Spitze liegt außerhalb der Arbeitszeit
