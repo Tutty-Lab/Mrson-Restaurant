@@ -486,6 +486,20 @@ function UrlaubDialog({
     });
   };
 
+  // Je Person eine Zeile; der Kalender klappt erst auf Tipp auf. Offen sind
+  // anfangs nur die, die in diesem Monat schon Urlaub haben – so ist der
+  // Dialog ohne Urlaub ein kurzer Blick und ein Klick auf „Tạo lịch".
+  const [offen, setOffen] = useState<Set<string>>(
+    () => new Set(employees.filter((e) => vacationDatesInMonth(e, year, month).length > 0).map((e) => e.id)),
+  );
+  const umschalten = (id: string) =>
+    setOffen((alt) => {
+      const neu = new Set(alt);
+      if (neu.has(id)) neu.delete(id);
+      else neu.add(id);
+      return neu;
+    });
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4">
       <div className="w-full max-w-2xl rounded-lg bg-white shadow-xl my-8">
@@ -505,31 +519,56 @@ function UrlaubDialog({
             const jahr = vacationDaysInYear(emp, year);
             const anspruch = vacationEntitlement(emp);
             const zuViel = jahr > anspruch;
+            const aufgeklappt = offen.has(emp.id);
+            const festeTage = emp.availableWeekdays?.length
+              ? `chỉ làm ${emp.availableWeekdays.map((k) => WEEKDAY_SHORT_VI[k]).join(", ")}`
+              : null;
             return (
-              <div key={emp.id} className="py-3">
-                <div className="flex flex-wrap items-baseline gap-x-2">
-                  <span className="font-medium text-slate-800">{emp.name}</span>
-                  <span className="text-xs text-slate-400">{employmentShortVi(emp.employmentType)}</span>
-                  <span className={`text-xs ${zuViel ? "text-rose-600 font-medium" : "text-slate-400"}`}>
-                    {jahr}/{anspruch} ngày trong năm {year}
-                    {zuViel && " ⚠ vượt quy định"}
-                  </span>
-                </div>
-                <div className="mt-1.5">
-                  <VacationPicker
-                    year={year}
-                    month={month}
-                    selected={emp.vacationDates ?? []}
-                    onToggle={(iso) => toggleUrlaub(emp, iso)}
-                    isClosed={isClosed}
-                  />
-                  {imMonat.length > 0 && (
-                    <div className="mt-1 text-xs text-slate-500">
-                      Đã chọn:{" "}
-                      {imMonat.map((iso) => `${Number(iso.slice(8))}.${iso.slice(5, 7)}`).join(", ")}
+              <div key={emp.id} className="py-2.5">
+                <button
+                  type="button"
+                  onClick={() => umschalten(emp.id)}
+                  aria-expanded={aufgeklappt}
+                  className="flex w-full items-center gap-3 rounded px-1 py-1 text-left hover:bg-slate-50"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="font-medium text-slate-800">{emp.name}</span>
+                      <span className="text-xs text-slate-400">
+                        {employmentShortVi(emp.employmentType)}
+                        {festeTage && ` · ${festeTage}`}
+                      </span>
                     </div>
-                  )}
-                </div>
+                    <div className="mt-0.5 text-xs">
+                      {imMonat.length > 0 ? (
+                        <span className="font-medium text-amber-700">
+                          Nghỉ {imMonat.length} ngày: {imMonat.map((iso) => Number(iso.slice(8))).join(", ")}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">Không nghỉ</span>
+                      )}
+                      <span className={zuViel ? "ml-2 font-medium text-rose-600" : "ml-2 text-slate-400"}>
+                        · {jahr}/{anspruch} ngày trong năm {year}
+                        {zuViel && " ⚠ vượt quy định"}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="shrink-0 text-sm text-slate-500">
+                    {aufgeklappt ? "Đóng ▴" : "Chọn ngày ▾"}
+                  </span>
+                </button>
+                {aufgeklappt && (
+                  <div className="mt-2 pl-1">
+                    <VacationPicker
+                      year={year}
+                      month={month}
+                      selected={emp.vacationDates ?? []}
+                      onToggle={(iso) => toggleUrlaub(emp, iso)}
+                      isClosed={isClosed}
+                      availableWeekdays={emp.availableWeekdays}
+                    />
+                  </div>
+                )}
               </div>
             );
           })}

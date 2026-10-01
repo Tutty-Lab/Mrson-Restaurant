@@ -407,6 +407,7 @@ function EmployeeSheet({
                   selected={d.vacationDates}
                   onToggle={toggleUrlaub}
                   isClosed={isClosed}
+                  availableWeekdays={d.availableWeekdays}
                 />
                 <p className="mt-1 text-[11px] text-slate-400">
                   Tính theo <b>ngày làm việc</b> (§ 3 BUrlG). Vượt mức chỉ <b>cảnh báo</b>.
