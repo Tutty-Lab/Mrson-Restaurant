@@ -13,6 +13,7 @@ import { MIN_PASSWORD_LENGTH, hashPassword, passwordMatches } from "../lib/auth"
 import { isRemoteConfigured, loadRemote, saveRemote, type RemoteStatus } from "../lib/remote";
 import { createManualShift, updateShiftTimes } from "../lib/shiftOps";
 import { employeesForMonth } from "../lib/availability";
+import { carryOverFor } from "../lib/weeks";
 import { publicHolidays } from "../lib/holidays";
 import {
   DEFAULT_WORK_HOURS,
@@ -68,6 +69,7 @@ function normalizeSchedule(raw: Schedule | undefined): Schedule {
     shifts: raw.shifts ?? [],
     lockedAt: raw.lockedAt,
     printedWeeks: Array.isArray(raw.printedWeeks) ? raw.printedWeeks : [],
+    carryOver: Array.isArray(raw.carryOver) ? raw.carryOver : [],
   };
 }
 
@@ -184,8 +186,8 @@ export function useSchedule() {
   }, [schedule, monthEmployees]);
 
   const validation: ValidationResult = useMemo(
-    () => validateSchedule(monthEmployees, monthSchedule.shifts, schedule.year),
-    [monthEmployees, monthSchedule.shifts, schedule.year],
+    () => validateSchedule(monthEmployees, monthSchedule.shifts, schedule.year, schedule.carryOver),
+    [monthEmployees, monthSchedule.shifts, schedule.year, schedule.carryOver],
   );
 
   /**
@@ -231,7 +233,17 @@ export function useSchedule() {
         (patch.year !== undefined && patch.year !== s.year) ||
         (patch.month !== undefined && patch.month !== s.month);
       if (monthChanged) {
-        return { ...s, ...patch, lockedAt: undefined, printedWeeks: [] };
+        // Ende des alten Monats merken, soweit es den neuen noch betrifft
+        // (Woche über die Monatsgrenze, Sechs-Tage-Kette). Aus den aktuellen
+        // Diensten UND dem schon gemerkten Vorlauf: wer kurz zurück- und
+        // wieder vorblättert, verliert ihn so nicht.
+        const year = patch.year ?? s.year;
+        const month = patch.month ?? s.month;
+        const seen = new Set<string>();
+        const carryOver = carryOverFor([...s.shifts, ...(s.carryOver ?? [])], year, month).filter(
+          (sh) => !seen.has(sh.id) && Boolean(seen.add(sh.id)),
+        );
+        return { ...s, ...patch, lockedAt: undefined, printedWeeks: [], carryOver };
       }
       return { ...s, ...patch };
     });
@@ -352,6 +364,7 @@ export function useSchedule() {
         workHours: schedule.workHours,
         overrides: overridesToMap(schedule.dateOverrides),
         employees: monthEmployees,
+        priorShifts: schedule.carryOver,
       });
       setSchedule((s) => ({ ...s, shifts, lockedAt: undefined, printedWeeks: [] }));
       setOriginalShifts(shifts.map((sh) => ({ ...sh })));
@@ -363,6 +376,7 @@ export function useSchedule() {
     schedule.month,
     schedule.workHours,
     schedule.dateOverrides,
+    schedule.carryOver,
     monthEmployees,
     isLocked,
   ]);

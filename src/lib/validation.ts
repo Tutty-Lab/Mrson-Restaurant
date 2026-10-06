@@ -13,6 +13,7 @@ import {
 } from "../types";
 import { calculatePause } from "./time";
 import { maxConsecutiveRun } from "./consecutive";
+import { weekStartOf } from "./weeks";
 import { WEEKDAY_LABELS_VI, type WeekdayKey } from "./demand";
 import { MAX_SHIFT_HOURS } from "./scheduler";
 
@@ -84,6 +85,12 @@ export function validateSchedule(
   shifts: Shift[],
   /** Jahr des geplanten Monats – nötig für die Urlaubsprüfung. */
   year: number = new Date().getFullYear(),
+  /**
+   * Dienste vom Ende des Vormonats (Schedule.carryOver). Zählen mit für die
+   * Kette und den Minijob-Wochendeckel, werden aber selbst nicht geprüft –
+   * sie gehören zum alten Plan.
+   */
+  priorShifts: Shift[] = [],
 ): ValidationResult {
   const errors: ValidationError[] = [];
 
@@ -209,7 +216,33 @@ export function validateSchedule(
     }
 
     const assignedMinutes = empShifts.reduce((sum, s) => sum + s.paidMinutes, 0);
-    const maxRun = maxConsecutiveRun(empShifts.map((s) => s.date));
+    const vorher = priorShifts.filter((s) => s.employeeId === emp.id);
+    // Die Kette läuft über die Monatsgrenze: Mo–Sa im Januar + So im Februar
+    // sind sieben Tage am Stück, auch wenn jeder Monat für sich nur einen sieht.
+    const maxRun = maxConsecutiveRun([...vorher, ...empShifts].map((s) => s.date));
+
+    // Minijob-Wochendeckel, Woche für Woche – einschließlich der Woche, die im
+    // Vormonat begonnen hat. Geplant wird mit MINIJOB_MAX_WEEKLY_HOURS; bis
+    // MINIJOB_FLEX_WEEKLY_HOURS darf der Nachschlag gehen, darüber ist es ein
+    // Verstoß (z. B. nach Handbearbeitung).
+    if (emp.employmentType === "MINIJOB") {
+      const proWoche = new Map<string, number>();
+      for (const s of [...vorher, ...empShifts]) {
+        const wk = weekStartOf(s.date);
+        proWoche.set(wk, (proWoche.get(wk) ?? 0) + s.paidMinutes);
+      }
+      const eigeneWochen = new Set(empShifts.map((s) => weekStartOf(s.date)));
+      for (const [wk, minuten] of proWoche) {
+        if (!eigeneWochen.has(wk)) continue; // reine Vormonatswoche: nicht unser Plan
+        if (minuten > MINIJOB_FLEX_WEEKLY_HOURS * 60) {
+          errors.push({
+            employeeId: emp.id,
+            severity: "warning",
+            message: `${emp.name}: tuần từ ${wk.slice(8)}.${wk.slice(5, 7)}. làm ${minuten / 60}h, vượt ${MINIJOB_FLEX_WEEKLY_HOURS}h/tuần của minijob (đã tính cả cuối tháng trước).`,
+          });
+        }
+      }
+    }
 
     if (assignedMinutes !== emp.targetMinutes) {
       const zuWenig = assignedMinutes < emp.targetMinutes;

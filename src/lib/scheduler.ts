@@ -52,6 +52,18 @@ export type GenerateInput = {
   holidays?: Set<string>;
   /** Optionaler Seed; sonst aus Eingabedaten abgeleitet. */
   seed?: string;
+  /**
+   * Dienste der letzten Tage VOR dem Monat (Ende des Vormonats).
+   *
+   * Eine Kalenderwoche hört nicht am Monatsende auf: die Woche 26.01.–01.02.
+   * gehört zu sechs Tagen dem Januar und mit dem Sonntag dem Februar. Ohne
+   * diese Dienste sah der Februar-Plan nur seinen Sonntag und gab einer
+   * Minijob-Kraft dort 7 h – obwohl sie am Freitag davor schon 8 h hatte, die
+   * Woche also bei 15 h statt höchstens 10 h landete. Dasselbe Loch hatte die
+   * Sechs-Tage-Regel. Diese Dienste werden nicht neu verplant und nicht
+   * zurückgegeben; sie zählen nur für Wochendeckel, Tage je Woche und Kette.
+   */
+  priorShifts?: Shift[];
 };
 
 type DateState = {
@@ -70,6 +82,8 @@ type SchedulerState = {
   weekendCount: Map<string, number>; // employeeId -> Anzahl Fr/Sa-Schichten
   remaining: Map<string, number>; // employeeId -> noch zu verplanende Minuten
   shifts: Shift[];
+  /** Dienste vor dem Monat – nur für Wochen- und Kettenregeln (siehe GenerateInput). */
+  prior: Shift[];
   /** Für Nachfrage/Spätquote maßgeblicher Wochentag (Feiertag = Sonntag). */
   effKeyOf: (isoDate: string) => WeekdayKey;
   /** Aufgelöster Tag (geschlossen? + Arbeitszeit-Fenster) für ein Datum. */
@@ -709,7 +723,8 @@ function weekDayRoomLeft(state: SchedulerState, employee: Employee, isoDate: str
 function weeklyHoursSoFar(state: SchedulerState, employeeId: string, isoDate: string): number {
   const woche = weekStartOf(isoDate);
   let minuten = 0;
-  for (const sh of state.shifts) {
+  // Auch die Dienste vom Ende des Vormonats: die Woche kennt keine Monatsgrenze.
+  for (const sh of [...state.prior, ...state.shifts]) {
     if (sh.employeeId === employeeId && weekStartOf(sh.date) === woche) minuten += sh.paidMinutes;
   }
   return minuten / 60;
@@ -1112,6 +1127,77 @@ function repairDemand(state: SchedulerState, employeesById: Map<string, Employee
     }
     if (trySwaps(state, employeesById)) improved = true;
     if (!improved) break;
+  }
+}
+
+/**
+ * Letzter Reparaturlauf: kein offener Tag ohne lückenlose Besetzung.
+ *
+ * Die Läufe davor optimieren STUNDEN je Tag, nicht die Uhrzeit. So blieb es
+ * möglich, dass an einem Mittwoch nur eine Person eingeteilt war (März 2026:
+ * 14:30–22:00) – mit höchstens 8,5 h Anwesenheit kann sie 11:30–22:00 nie
+ * allein abdecken, der Laden stand drei Stunden leer. Gefunden hat das erst
+ * eine minutengenaue Gegenprobe; die App selbst prüfte es nicht.
+ *
+ * Für jeden solchen Tag wird ein Dienst von einem anderen Tag herübergeholt,
+ * der danach weiterhin lückenlos besetzt ist (möglichst samt Stoßzeit). Alle
+ * harten Regeln gelten wie beim Verschieben; die Dauer bleibt => Soll exakt.
+ */
+function repairGaps(state: SchedulerState): void {
+  const lueckenlos = (isoDate: string, hours: number[]) =>
+    canCoverDay(state.dayOf(isoDate).window, hours, true, false);
+  const mitSpitze = (isoDate: string, hours: number[]) =>
+    canCoverDay(state.dayOf(isoDate).window, hours, true, true);
+  const ohne = (hours: number[], h: number) => {
+    const i = hours.indexOf(h);
+    return hours.filter((_, j) => j !== i);
+  };
+
+  for (let pass = 0; pass < 3; pass++) {
+    let changed = false;
+    for (const to of state.dates) {
+      const day = state.dayOf(to);
+      if (day.closed) continue;
+      const hoursTo = dayPaidHours(state, to);
+      if (lueckenlos(to, hoursTo)) continue;
+
+      let best: Shift | null = null;
+      let bestScore = Number.NEGATIVE_INFINITY;
+      for (const shift of state.shifts) {
+        const from = shift.date;
+        if (from === to) continue;
+        const worked = state.worked.get(shift.employeeId)!;
+        if (worked.has(to)) continue;
+        if (!shiftFitsOn(state, shift, to)) continue;
+        if (presenceFromPaid(shift.paidMinutes) > windowLength(day)) continue;
+        const trial = new Set(worked);
+        trial.delete(from);
+        if (consecutiveRunLengthWith(trial, to) > 6) continue;
+
+        const h = shift.paidMinutes / 60;
+        const restFrom = ohne(dayPaidHours(state, from), h);
+        if (!lueckenlos(from, restFrom)) continue; // kein neues Loch reißen
+        const zielGut = lueckenlos(to, [...hoursTo, h]);
+
+        // Lieber ein Ziel, das danach dicht ist; lieber ein Spender, der seine
+        // Stoßzeit behält; lieber ein Spender mit vielen Leuten.
+        const score =
+          (zielGut ? 1000 : 0) +
+          (mitSpitze(from, restFrom) || !mitSpitze(from, dayPaidHours(state, from)) ? 100 : 0) +
+          restFrom.length;
+        if (score > bestScore) {
+          bestScore = score;
+          best = shift;
+        }
+      }
+      if (best && bestScore >= 1000) {
+        const emp = state.byId.get(best.employeeId)!;
+        removeShift(state, best);
+        applyShift(state, makeShift(state, emp, to, best.paidMinutes));
+        changed = true;
+      }
+    }
+    if (!changed) break;
   }
 }
 
@@ -1753,6 +1839,19 @@ export function generateSchedule(input: GenerateInput): Shift[] {
 
   const employeesById = new Map(employees.map((e) => [e.id, e] as const));
   const ordered = orderedEmployees(employees);
+
+  // Nur Dienste VOR dem Monat zählen als Vorlauf – ein versehentlich
+  // mitgegebener Dienst aus dem Monat selbst würde sonst doppelt zählen.
+  const monthStart = dates[0];
+  const prior = (input.priorShifts ?? []).filter(
+    (s) => s.date < monthStart && employeesById.has(s.employeeId),
+  );
+  /** Arbeitstage je Person, vorbelegt mit den Tagen vom Ende des Vormonats. */
+  const workedWithPrior = () => {
+    const m = new Map(employees.map((e) => [e.id, new Set<string>()]));
+    for (const s of prior) m.get(s.employeeId)!.add(s.date);
+    return m;
+  };
   const n = ordered.length;
 
   /**
@@ -1766,11 +1865,15 @@ export function generateSchedule(input: GenerateInput): Shift[] {
       dates,
       rawTarget,
       dateState: new Map(dates.map((d) => [d, { totalPaid: 0, latePaid: 0, count: 0 }])),
-      worked: new Map(employees.map((e) => [e.id, new Set<string>()])),
+      // Vorbelegt: die Sechs-Tage-Kette und "Tage je Woche" laufen über die
+      // Monatsgrenze. Die Vormonatstage liegen nie im Monat, kollidieren also
+      // nicht mit "ein Dienst pro Tag".
+      worked: workedWithPrior(),
       byId: new Map(employees.map((e) => [e.id, e] as const)),
       weekendCount: new Map(employees.map((e) => [e.id, 0])),
       remaining: new Map(employees.map((e) => [e.id, e.targetMinutes])),
       shifts: [],
+      prior,
       effKeyOf,
       dayOf,
       rng: seededRandom(seed + salt),
@@ -1828,6 +1931,9 @@ export function generateSchedule(input: GenerateInput): Shift[] {
   repairDemand(state, employeesById);
   // Erst danach: die Stundenbilanz steht, jetzt die Form für die Stoßzeit.
   repairPeakCapacity(state, employeesById);
+  // Zuletzt: kein offener Tag ohne lückenlose Besetzung (geht vor Stunden-
+  // treue und Stoßzeit – ein leerer Laden ist der schwerste Fehler).
+  repairGaps(state);
   balanceShiftTypes(state);
 
   // Stabil sortieren: nach Datum, dann Startzeit, dann Mitarbeiter.

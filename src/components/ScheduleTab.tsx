@@ -22,6 +22,36 @@ import { ShiftCellEditor } from "./ShiftCellEditor";
 import { ScheduleDayView } from "./ScheduleDayView";
 import { weeksOfMonth } from "../lib/weeks";
 import { employmentShortVi } from "../lib/employment";
+import { buildDayDebug, buildEmployeeDebug, fullWeekLabel, SLOT_MINUTES, type DayDebug } from "../lib/debugStats";
+import { MINIJOB_FLEX_WEEKLY_HOURS, MINIJOB_MAX_WEEKLY_HOURS } from "../types";
+
+const DEBUG_KEY = "stundenzettel-app:debug";
+
+/** Farbe eines Feldes im Besetzungsstreifen: 0 rot, 1 gelb, 2 hellgrün, 3+ grün. */
+function slotColor(n: number): string {
+  if (n <= 0) return "bg-rose-500";
+  if (n === 1) return "bg-amber-300";
+  if (n === 2) return "bg-emerald-300";
+  return "bg-emerald-600";
+}
+
+/** Besetzungsstreifen eines Tages: ein Feld je halbe Stunde, Tooltip mit Zahlen. */
+function CoverageStrip({ dd }: { dd: DayDebug }) {
+  if (!dd.window) return <span className="text-slate-300">—</span>;
+  const { start } = dd.window;
+  const title = dd.slots
+    .map((n, i) => `${minutesToTime(start + i * SLOT_MINUTES)} ${n} người`)
+    .join("\n");
+  return (
+    <div className="flex h-3 w-full overflow-hidden rounded-sm" title={title}>
+      {dd.slots.map((n, i) => (
+        <div key={i} className={`flex-1 ${slotColor(n)} ${i > 0 ? "border-l border-white/60" : ""}`} />
+      ))}
+    </div>
+  );
+}
+
+const fmtH = (h: number) => `${Number.isInteger(h) ? h : h.toLocaleString("de-DE", { maximumFractionDigits: 1 })}h`;
 
 function isWeekendKey(iso: string): boolean {
   const k = weekdayKeyOf(parseIsoDate(iso));
@@ -116,6 +146,36 @@ export function ScheduleTab({ store }: { store: UseScheduleReturn }) {
   }, [dates, schedule.shifts]);
 
   const hasEmployees = schedule.employees.length > 0;
+
+  // Debug-Zeilen und -Spalten: standardmäßig an (Wunsch des Betriebs), merkt
+  // sich die Wahl je Gerät.
+  const [debug, setDebugState] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(DEBUG_KEY) !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const setDebug = (on: boolean) => {
+    setDebugState(on);
+    try {
+      localStorage.setItem(DEBUG_KEY, on ? "1" : "0");
+    } catch {
+      /* egal – dann eben nur für diese Sitzung */
+    }
+  };
+  const dayDebug = useMemo(() => buildDayDebug(schedule), [schedule]);
+  const empDebug = useMemo(
+    () => new Map(schedule.employees.map((e) => [e.id, buildEmployeeDebug(e, schedule)] as const)),
+    [schedule],
+  );
+  // Zusatzspalten rechts: Ngày làm, Liền max, Ca ngắn–dài + eine je Woche.
+  const debugCols = debug ? 3 + weeks.length : 0;
+  const lengthHistogram = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const sh of schedule.shifts) m.set(sh.paidMinutes / 60, (m.get(sh.paidMinutes / 60) ?? 0) + 1);
+    return [...m.entries()].sort((a, b) => a[0] - b[0]);
+  }, [schedule.shifts]);
 
   return (
     <section>
@@ -274,6 +334,19 @@ export function ScheduleTab({ store }: { store: UseScheduleReturn }) {
           <span className="inline-flex items-center gap-1">
             <span className="inline-block h-3 w-3 rounded border shift-custom bg-white" /> Đã sửa tay
           </span>
+          <label className="ml-auto inline-flex items-center gap-1.5 cursor-pointer select-none">
+            <input type="checkbox" checked={debug} onChange={(e) => setDebug(e.target.checked)} />
+            Hiện thông tin debug
+          </label>
+          {debug && (
+            <span className="inline-flex items-center gap-1 text-slate-500">
+              Độ phủ:
+              <span className="inline-block h-3 w-3 rounded-sm bg-rose-500" /> 0
+              <span className="inline-block h-3 w-3 rounded-sm bg-amber-300" /> 1
+              <span className="inline-block h-3 w-3 rounded-sm bg-emerald-300" /> 2
+              <span className="inline-block h-3 w-3 rounded-sm bg-emerald-600" /> 3+ người
+            </span>
+          )}
         </div>
       )}
 
@@ -330,6 +403,29 @@ export function ScheduleTab({ store }: { store: UseScheduleReturn }) {
                 <th className="bg-slate-100 border-b border-l border-slate-200 px-2 py-2 text-right min-w-[70px]">
                   Chênh lệch
                 </th>
+                {debug && (
+                  <>
+                    <th className="bg-amber-50 border-b border-l border-slate-200 px-2 py-2 text-right" title="Số ngày có ca trong tháng">
+                      Ngày làm
+                    </th>
+                    <th className="bg-amber-50 border-b border-l border-slate-200 px-2 py-2 text-right" title="Chuỗi ngày làm liên tiếp dài nhất, tính cả cuối tháng trước (tối đa 6)">
+                      Liền max
+                    </th>
+                    <th className="bg-amber-50 border-b border-l border-slate-200 px-2 py-2 text-right" title="Ca ngắn nhất – dài nhất (giờ trả lương)">
+                      Ca ngắn–dài
+                    </th>
+                    {weeks.map((w) => (
+                      <th
+                        key={w.weekStart}
+                        className="bg-amber-50 border-b border-l border-slate-200 px-2 py-1 text-center min-w-[78px]"
+                        title="Giờ / số ngày trong tuần (T2–CN), tính cả ca của tháng trước/sau nếu tuần vắt tháng"
+                      >
+                        <div>Tuần</div>
+                        <div className="text-[10px] font-normal text-slate-500">{fullWeekLabel(w.weekStart)}</div>
+                      </th>
+                    ))}
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -386,22 +482,226 @@ export function ScheduleTab({ store }: { store: UseScheduleReturn }) {
                     >
                       {signedHours(diff)}
                     </td>
+                    {debug && (() => {
+                      const ed = empDebug.get(emp.id)!;
+                      return (
+                        <>
+                          <td className="border-b border-l border-slate-200 px-2 py-1 text-right">{ed.workDays}</td>
+                          <td
+                            className={`border-b border-l border-slate-200 px-2 py-1 text-right ${ed.maxRun > 6 ? "bg-rose-100 text-rose-700 font-semibold" : ""}`}
+                          >
+                            {ed.maxRun}
+                          </td>
+                          <td className="border-b border-l border-slate-200 px-2 py-1 text-right whitespace-nowrap">
+                            {ed.workDays ? `${fmtH(ed.minShiftHours)}–${fmtH(ed.maxShiftHours)}` : "—"}
+                          </td>
+                          {ed.weeks.map((w) => {
+                            const bad = w.tooManyDays || w.minijob === "over";
+                            const warn = w.minijob === "flex";
+                            return (
+                              <td
+                                key={w.weekStart}
+                                className={`border-b border-l border-slate-200 px-1 py-1 text-center whitespace-nowrap ${
+                                  bad ? "bg-rose-100 text-rose-700 font-semibold" : warn ? "bg-amber-100 text-amber-800" : ""
+                                }`}
+                                title={
+                                  `${w.label}: ${w.hours}h, ${w.days} ngày` +
+                                  (w.carryDays ? ` (trong đó ${w.carryHours}h / ${w.carryDays} ngày của tháng trước)` : "") +
+                                  (emp.maxDaysPerWeek ? ` · tối đa ${emp.maxDaysPerWeek} ngày/tuần` : "") +
+                                  (w.minijob ? ` · minijob ${MINIJOB_MAX_WEEKLY_HOURS}h (nới tối đa ${MINIJOB_FLEX_WEEKLY_HOURS}h)` : "")
+                                }
+                              >
+                                <div>{fmtH(w.hours)} · {w.days}n</div>
+                                {w.carryDays > 0 && (
+                                  <div className="text-[10px] text-slate-500">+{fmtH(w.carryHours)} th.trước</div>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </>
+                      );
+                    })()}
                   </tr>
                 );
               })}
             </tbody>
             <tfoot>
-              <SummaryRow label="Số nhân viên" dates={gridDates} value={(d) => String(dayStats.get(d)!.people.size)} />
-              <SummaryRow label="Số ca" dates={gridDates} value={(d) => String(dayStats.get(d)!.shifts)} />
+              <SummaryRow label="Số nhân viên" dates={gridDates} tail={debugCols} value={(d) => String(dayStats.get(d)!.people.size)} />
+              <SummaryRow label="Số ca" dates={gridDates} tail={debugCols} value={(d) => String(dayStats.get(d)!.shifts)} />
               <SummaryRow
                 label="Tổng giờ"
                 dates={gridDates}
+                tail={debugCols}
                 value={(d) => minutesToShortHours(dayStats.get(d)!.total)}
               />
-              <SummaryRow label="Ca sáng" dates={gridDates} value={(d) => String(dayStats.get(d)!.early)} />
-              <SummaryRow label="Ca tối" dates={gridDates} value={(d) => String(dayStats.get(d)!.late)} />
+              <SummaryRow label="Ca sáng" dates={gridDates} tail={debugCols} value={(d) => String(dayStats.get(d)!.early)} />
+              <SummaryRow label="Ca tối" dates={gridDates} value={(d) => String(dayStats.get(d)!.late)} tail={debugCols} />
+              {debug && (
+                <>
+                  <SummaryRow
+                    label="Khung giờ"
+                    dates={gridDates}
+                    tail={debugCols}
+                    value={(d) => {
+                      const dd = dayDebug.get(d)!;
+                      if (!dd.window) return <span className="text-rose-600">Đóng cửa</span>;
+                      return `${minutesToTime(dd.window.start)}–${minutesToTime(dd.window.end)}`;
+                    }}
+                  />
+                  <SummaryRow
+                    label="Độ phủ (30′)"
+                    dates={gridDates}
+                    tail={debugCols}
+                    value={(d) => <CoverageStrip dd={dayDebug.get(d)!} />}
+                  />
+                  <SummaryRow
+                    label="Trống người"
+                    dates={gridDates}
+                    tail={debugCols}
+                    cellClass={(d) => (dayDebug.get(d)!.gaps.length ? "bg-rose-100 text-rose-700 font-semibold" : "")}
+                    value={(d) => {
+                      const dd = dayDebug.get(d)!;
+                      if (!dd.window) return "";
+                      if (!dd.gaps.length) return <span className="text-emerald-600">✓</span>;
+                      return (
+                        <div className="leading-tight">
+                          {dd.gaps.map(([a, b]) => (
+                            <div key={a}>{minutesToTime(a)}–{minutesToTime(b)}</div>
+                          ))}
+                        </div>
+                      );
+                    }}
+                  />
+                  <SummaryRow
+                    label="Ít người nhất"
+                    dates={gridDates}
+                    tail={debugCols}
+                    value={(d) => {
+                      const dd = dayDebug.get(d)!;
+                      return dd.window ? String(dd.minStaff) : "";
+                    }}
+                  />
+                  <SummaryRow
+                    label="Cao điểm"
+                    dates={gridDates}
+                    tail={debugCols}
+                    cellClass={(d) =>
+                      dayDebug.get(d)!.peaks.some((p) => !p.ok) ? "bg-amber-100 text-amber-800 font-semibold" : ""
+                    }
+                    value={(d) => {
+                      const dd = dayDebug.get(d)!;
+                      if (!dd.peaks.length) return <span className="text-slate-300">—</span>;
+                      return (
+                        <div className="leading-tight">
+                          {dd.peaks.map((p) => (
+                            <div key={p.label} title={`${p.label} ${minutesToTime(p.from)}–${minutesToTime(p.to)}`}>
+                              {minutesToTime(p.from).slice(0, 2)}–{minutesToTime(p.to).slice(0, 2)}h: {p.minStaff}/{p.required}{" "}
+                              {p.ok ? "✓" : "✗"}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    }}
+                  />
+                  <SummaryRow
+                    label="Mở cửa"
+                    dates={gridDates}
+                    tail={debugCols}
+                    cellClass={(d) => (dayDebug.get(d)!.window && !dayDebug.get(d)!.openers.length ? "bg-rose-100 text-rose-700" : "")}
+                    value={(d) => <span className="text-[10px]">{dayDebug.get(d)!.openers.join(", ")}</span>}
+                  />
+                  <SummaryRow
+                    label="Đóng cửa"
+                    dates={gridDates}
+                    tail={debugCols}
+                    cellClass={(d) => (dayDebug.get(d)!.window && !dayDebug.get(d)!.closers.length ? "bg-rose-100 text-rose-700" : "")}
+                    value={(d) => <span className="text-[10px]">{dayDebug.get(d)!.closers.join(", ")}</span>}
+                  />
+                  <SummaryRow
+                    label="Giờ mục tiêu / lệch"
+                    dates={gridDates}
+                    tail={debugCols}
+                    value={(d) => {
+                      const dd = dayDebug.get(d)!;
+                      if (!dd.window) return "";
+                      const lech = dd.paidHours - dd.targetHours;
+                      return (
+                        <div className="leading-tight" title="Giờ mục tiêu = tổng giờ đã xếp chia theo trọng số thứ trong tuần">
+                          <div>{fmtH(Math.round(dd.targetHours * 10) / 10)}</div>
+                          <div className={`text-[10px] ${Math.abs(lech) >= 3 ? "text-amber-700 font-semibold" : "text-slate-500"}`}>
+                            {lech >= 0 ? "+" : ""}
+                            {lech.toLocaleString("de-DE", { maximumFractionDigits: 1 })}h
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
+                </>
+              )}
             </tfoot>
           </table>
+        </div>
+      )}
+
+      {debug && hasEmployees && schedule.shifts.length > 0 && (
+        <div className="mt-3 grid gap-3 md:grid-cols-3 text-xs">
+          <div className="rounded-lg border border-slate-200 bg-white p-3">
+            <div className="font-semibold text-slate-700 mb-1">
+              Ca nhớ từ cuối tháng trước ({(schedule.carryOver ?? []).length})
+            </div>
+            <p className="text-slate-500 mb-1">
+              Dùng để tính giới hạn tuần và 6 ngày liền cho tuần vắt tháng. Có khi chuyển tháng theo thứ tự (1 → 2 → 3…).
+            </p>
+            {(schedule.carryOver ?? []).length === 0 ? (
+              <div className="text-slate-400">Không có.</div>
+            ) : (
+              <ul className="space-y-0.5 max-h-40 overflow-auto">
+                {[...(schedule.carryOver ?? [])]
+                  .sort((a, b) => a.date.localeCompare(b.date) || a.startMinutes - b.startMinutes)
+                  .map((sh) => (
+                    <li key={sh.id}>
+                      {sh.date.slice(8)}.{sh.date.slice(5, 7)}.{" "}
+                      {schedule.employees.find((e) => e.id === sh.employeeId)?.name ?? sh.employeeId}:{" "}
+                      {minutesToTime(sh.startMinutes)}–{minutesToTime(sh.endMinutes)} ({fmtH(sh.paidMinutes / 60)})
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-3">
+            <div className="font-semibold text-slate-700 mb-1">Tất cả lỗi / cảnh báo ({validation.errors.length})</div>
+            {validation.errors.length === 0 ? (
+              <div className="text-emerald-600">Không có.</div>
+            ) : (
+              <ul className="space-y-0.5 max-h-40 overflow-auto">
+                {validation.errors.map((e, i) => (
+                  <li key={i} className={e.severity === "warning" ? "text-amber-700" : "text-rose-700"}>
+                    {e.severity === "warning" ? "⚠" : "✗"} {e.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-3">
+            <div className="font-semibold text-slate-700 mb-1">Độ dài ca ({schedule.shifts.length} ca)</div>
+            <div className="space-y-0.5">
+              {lengthHistogram.map(([h, n]) => (
+                <div key={h} className="flex items-center gap-2">
+                  <span className="w-8 text-right">{fmtH(h)}</span>
+                  <div className="h-2 rounded bg-slate-400" style={{ width: `${(n / schedule.shifts.length) * 100}%` }} />
+                  <span className="text-slate-500">{n}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 text-slate-500">
+              Ngày trống người:{" "}
+              <b className={[...dayDebug.values()].some((d) => d.gaps.length) ? "text-rose-600" : "text-emerald-600"}>
+                {[...dayDebug.values()].filter((d) => d.gaps.length).length}
+              </b>
+              {" · "}Ngày thiếu cao điểm:{" "}
+              <b>{[...dayDebug.values()].filter((d) => d.peaks.some((p) => !p.ok)).length}</b>
+            </div>
+          </div>
         </div>
       )}
 
@@ -423,10 +723,15 @@ function SummaryRow({
   label,
   dates,
   value,
+  tail = 0,
+  cellClass,
 }: {
   label: string;
   dates: string[];
-  value: (d: string) => string;
+  value: (d: string) => React.ReactNode;
+  /** Zusätzliche leere Zellen rechts (Debug-Spalten). */
+  tail?: number;
+  cellClass?: (d: string) => string;
 }) {
   return (
     <tr className="bg-slate-50 text-slate-600">
@@ -436,12 +741,15 @@ function SummaryRow({
       <td className="border-t border-slate-200" />
       <td className="border-t border-slate-200" />
       {dates.map((d) => (
-        <td key={d} className="border-t border-l border-slate-200 px-1 py-1 text-center">
+        <td key={d} className={`border-t border-l border-slate-200 px-1 py-1 text-center ${cellClass?.(d) ?? ""}`}>
           {value(d)}
         </td>
       ))}
       <td className="border-t border-l border-slate-200" />
       <td className="border-t border-l border-slate-200" />
+      {Array.from({ length: tail }, (_, i) => (
+        <td key={`t${i}`} className="border-t border-l border-slate-200" />
+      ))}
     </tr>
   );
 }

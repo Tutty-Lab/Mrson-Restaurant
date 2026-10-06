@@ -171,6 +171,13 @@ export type Schedule = {
   lockedAt?: string;
   /** Bereits gedruckte Wochen, als ISO-Datum des jeweiligen Montags. */
   printedWeeks?: string[];
+  /**
+   * Dienste der letzten sechs Tage VOR diesem Monat, gemerkt beim Wechsel in
+   * den Folgemonat. Werden nicht angezeigt oder gedruckt – sie sorgen nur
+   * dafür, dass Wochendeckel und Sechs-Tage-Regel über die Monatsgrenze
+   * hinweg gelten (scheduler.ts, GenerateInput.priorShifts).
+   */
+  carryOver?: Shift[];
 };
 
 /** Ein einzelnes zu verplanendes Schicht-Token (Ergebnis von splitTargetHours). */
