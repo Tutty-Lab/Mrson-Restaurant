@@ -31,6 +31,7 @@ import { MONTH_NAMES_DE } from "./dateFormat";
 import { employmentLabelDe } from "./employment";
 import { publicHolidayNames, publicHolidays } from "./holidays";
 import { isDayClosed } from "./workHours";
+import { employedOn } from "./availability";
 import { format } from "date-fns";
 
 /** Dateiname säubern: Umlaute/Akzente weg, nur unbedenkliche Zeichen behalten. */
@@ -227,11 +228,13 @@ function stundenzettelRowsFor(
     const datum = `${format(parseIsoDate(d), "dd.MM.yyyy")}\n${wd}`;
 
     if (dienste.length === 0) {
-      const bemerkung = closed
-        ? closed.note || "Betriebsruhe"
-        : holiday
-          ? `Frei (Feiertag: ${holiday})`
-          : "Frei";
+      const bemerkung = !employedOn(employee, d)
+        ? "Nicht beschäftigt"
+        : closed
+          ? closed.note || "Betriebsruhe"
+          : holiday
+            ? `Frei (Feiertag: ${holiday})`
+            : "Frei";
       return { shaded, shiftCount: 0, cells: [datum, "", "", "", "0,00", bemerkung] };
     }
 
@@ -446,7 +449,6 @@ function drawStundenzettel(
       ["Beschäftigungsart", employmentLabelDe(employee.employmentType)],
       ["Mitarbeiter", employee.name],
       ["Monat", MONTH_NAMES_DE[schedule.month - 1]],
-      ["Sollstunden", null], // von Hand einzutragen
       ["Jahr", String(schedule.year)],
     ],
     startY,
@@ -465,10 +467,10 @@ function drawStundenzettel(
   const summaryY = pageH - 30;
   const col3 = (pageW - 2 * MARGIN) / 3;
 
+  // Sollstunden und Differenz standen hier früher als leere Schreiblinien –
+  // auf Wunsch des Betriebs entfernt. Gedruckt wird nur, was geleistet wurde.
   const summary: Array<[string, string | null]> = [
     ["Gesamtstunden", `${minutesToDecimalHours(totalMinutes)} h`],
-    ["Sollstunden", null],
-    ["Differenz", null],
   ];
   summary.forEach(([label, value], i) => {
     const x = MARGIN + i * col3;

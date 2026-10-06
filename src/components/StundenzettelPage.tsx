@@ -10,6 +10,7 @@ import { MONTH_NAMES_DE } from "../lib/dateFormat";
 import { publicHolidayNames } from "../lib/holidays";
 import { format } from "date-fns";
 import { employmentLabelDe } from "../lib/employment";
+import { employedOn } from "../lib/availability";
 
 // Deutscher Monats-Titel für das offizielle Dokument.
 function monthLabelDe(year: number, month: number): string {
@@ -63,12 +64,6 @@ export function StundenzettelPage({
         <Info label="Beschäftigungsart" value={employmentLabelDe(employee.employmentType)} />
         <Info label="Mitarbeiter" value={employee.name} />
         <Info label="Monat" value={MONTH_NAMES_DE[schedule.month - 1]} />
-        {/*
-          Sollstunden bleibt auf dem Zettel bewusst LEER: der Betrieb trägt den
-          Wert von Hand ein (Ausdruck wie PDF). Die geplante Zahl steht in der
-          App (Tab Nhân viên) und gehört nicht auf das Dokument.
-        */}
-        <Info label="Sollstunden" blank />
         <Info label="Jahr" value={String(schedule.year)} />
       </div>
 
@@ -94,6 +89,8 @@ export function StundenzettelPage({
             let bemerkung: string;
             if (s) {
               bemerkung = holiday ? `Feiertag: ${holiday}` : "";
+            } else if (!employedOn(employee, d)) {
+              bemerkung = "Nicht beschäftigt";
             } else if (closed) {
               bemerkung = closed.note || "Betriebsruhe";
             } else if (holiday) {
@@ -127,21 +124,11 @@ export function StundenzettelPage({
 
       {/*
         Nur die tatsächlich geleisteten Stunden werden gedruckt. Sollstunden und
-        Differenz bleiben leer – sie werden auf dem Papier von Hand ergänzt.
+        Differenz sind auf Wunsch des Betriebs vom Zettel verschwunden.
       */}
-      <div className="mt-3 grid grid-cols-3 gap-4 text-[12px]">
-        <div>
-          <div className="text-slate-500">Gesamtstunden</div>
-          <div className="font-semibold">{minutesToDecimalHours(totalMinutes)} h</div>
-        </div>
-        <div>
-          <div className="text-slate-500">Sollstunden</div>
-          <BlankLine />
-        </div>
-        <div>
-          <div className="text-slate-500">Differenz</div>
-          <BlankLine />
-        </div>
+      <div className="mt-3 text-[12px]">
+        <div className="text-slate-500">Gesamtstunden</div>
+        <div className="font-semibold">{minutesToDecimalHours(totalMinutes)} h</div>
       </div>
 
       <div className="mt-10 grid grid-cols-3 gap-8 text-[11px]">
@@ -153,23 +140,13 @@ export function StundenzettelPage({
   );
 }
 
-/** `blank` = Feld zum Ausfüllen von Hand statt eines gedruckten Werts. */
-function Info({ label, value, blank }: { label: string; value?: string; blank?: boolean }) {
+function Info({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex gap-2">
       <span className="text-slate-500 min-w-[110px]">{label}:</span>
-      {blank ? (
-        <span className="flex-1 border-b border-slate-400" />
-      ) : (
-        <span className="font-medium">{value}</span>
-      )}
+      <span className="font-medium">{value}</span>
     </div>
   );
-}
-
-/** Leere Schreiblinie – markiert ein Feld, das von Hand ergänzt wird. */
-function BlankLine() {
-  return <div className="border-b border-slate-400 h-[1.2em] w-full max-w-[80px]" />;
 }
 
 function Th({ children, className = "" }: { children?: React.ReactNode; className?: string }) {

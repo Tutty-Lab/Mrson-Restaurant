@@ -116,6 +116,20 @@ export type Employee = {
    * verteilen – wer wann frei nimmt, ist eine Absprache im Betrieb.
    */
   vacationDates?: string[];
+  /**
+   * Beschäftigungszeitraum als ISO-Daten "yyyy-MM-dd", beide EINSCHLIESSLICH:
+   * startDate = erster Arbeitstag (Eintritt), endDate = letzter Arbeitstag
+   * (Austritt). Fehlt ein Wert, ist der Zeitraum nach dieser Seite offen.
+   *
+   * Grund: `Schedule` hält nur einen Monat, die Belegschaft wechselt aber über
+   * das Jahr (eine Aushilfe nur Januar–Februar, eine andere ab Juni). Ohne
+   * diese Daten musste man vor jedem Monat Leute löschen und neu anlegen –
+   * und verlor dabei ihren Urlaub. Wer im Monat gar nicht beschäftigt ist,
+   * verschwindet aus Plan, Prüfung und Stundenzettel; wer mitten im Monat
+   * kommt oder geht, bekommt das Soll anteilig (availability.ts).
+   */
+  startDate?: string;
+  endDate?: string;
 };
 
 export type Shift = {

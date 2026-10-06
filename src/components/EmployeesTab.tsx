@@ -51,6 +51,8 @@ type Draft = {
   availableWeekdays: WeekdayKey[]; // [] = mọi ngày
   maxDays: string;
   vacationDates: string[];
+  startDate: string; // "" = offen
+  endDate: string; // "" = offen
 };
 
 function draftFrom(emp?: Employee): Draft {
@@ -61,6 +63,8 @@ function draftFrom(emp?: Employee): Draft {
     availableWeekdays: emp?.availableWeekdays ?? [],
     maxDays: emp?.maxDaysPerWeek ? String(emp.maxDaysPerWeek) : "",
     vacationDates: emp?.vacationDates ?? [],
+    startDate: emp?.startDate ?? "",
+    endDate: emp?.endDate ?? "",
   };
 }
 
@@ -77,11 +81,24 @@ function draftToEmployee(d: Draft): Omit<Employee, "id"> {
         : [...d.availableWeekdays],
     maxDaysPerWeek: d.maxDays === "" || tage < 1 ? undefined : Math.min(7, Math.round(tage)),
     vacationDates: d.vacationDates.length > 0 ? [...d.vacationDates].sort() : undefined,
+    startDate: d.startDate || undefined,
+    endDate: d.endDate || undefined,
   };
 }
 
+/** "2026-03-01" -> "01.03.2026". */
+function dateDe(iso: string): string {
+  return `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`;
+}
+
 export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
-  const { schedule, addEmployee, updateEmployee, removeEmployee, isLocked } = store;
+  const { schedule, allEmployees, addEmployee, updateEmployee, removeEmployee, isLocked } = store;
+  // Soll im geplanten Monat je id (anteilig bei Eintritt/Austritt); fehlt eine
+  // id, ist die Person in diesem Monat nicht beschäftigt.
+  const monthTarget = useMemo(
+    () => new Map(schedule.employees.map((e) => [e.id, e.targetMinutes] as const)),
+    [schedule.employees],
+  );
 
   const holidays = useMemo(() => publicHolidays(schedule.year), [schedule.year]);
   const overrides = useMemo(
@@ -98,9 +115,9 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
   const bearbeitet = useMemo(
     () =>
       typeof offen === "string" && offen !== "new"
-        ? schedule.employees.find((e) => e.id === offen)
+        ? allEmployees.find((e) => e.id === offen)
         : undefined,
-    [offen, schedule.employees],
+    [offen, allEmployees],
   );
 
   return (
@@ -108,9 +125,11 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-base font-semibold text-slate-900">
           Nhân viên
-          {schedule.employees.length > 0 && (
+          {allEmployees.length > 0 && (
             <span className="ml-2 text-sm font-normal text-slate-400">
-              {schedule.employees.length}
+              {schedule.employees.length < allEmployees.length
+                ? `${schedule.employees.length}/${allEmployees.length} làm tháng này`
+                : allEmployees.length}
             </span>
           )}
         </h2>
@@ -124,7 +143,8 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
       </div>
       <p className="text-xs text-slate-500 mb-4">
         Giờ nhập theo <b>tháng</b>. Bấm vào một người để sửa (hình thức, giờ, ngày làm trong
-        tuần, số ngày/tuần, nghỉ phép).
+        tuần, số ngày/tuần, nghỉ phép, ngày vào làm / nghỉ việc). Người chưa vào làm hoặc đã
+        nghỉ việc sẽ không được xếp lịch và không có bảng chấm công trong tháng đó.
       </p>
 
       {isLocked && (
@@ -134,19 +154,23 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
         </div>
       )}
 
-      {schedule.employees.length === 0 ? (
+      {allEmployees.length === 0 ? (
         <div className="py-8 text-center text-slate-400">
           Chưa có nhân viên. Bấm <b>+ Thêm</b> để tạo.
         </div>
       ) : (
         <ul className="space-y-2">
-          {schedule.employees.map((emp) => (
+          {allEmployees.map((emp) => (
             <li key={emp.id}>
               <button
                 onClick={() => setOffen(emp.id)}
                 className="w-full text-left rounded-lg border border-slate-200 p-3 flex items-center gap-3 hover:bg-slate-50 active:bg-slate-100 transition-colors"
               >
-                <EmployeeSummaryRow emp={emp} year={schedule.year} />
+                <EmployeeSummaryRow
+                  emp={emp}
+                  year={schedule.year}
+                  monthTargetMinutes={monthTarget.get(emp.id)}
+                />
                 <span className="text-slate-300 text-lg leading-none">›</span>
               </button>
             </li>
@@ -192,7 +216,18 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
 }
 
 /** Kompakte Zeile in der Liste. */
-function EmployeeSummaryRow({ emp, year }: { emp: Employee; year: number }) {
+function EmployeeSummaryRow({
+  emp,
+  year,
+  monthTargetMinutes,
+}: {
+  emp: Employee;
+  year: number;
+  /** Soll im geplanten Monat; undefined = in diesem Monat nicht beschäftigt. */
+  monthTargetMinutes?: number;
+}) {
+  const ausserhalb = monthTargetMinutes === undefined;
+  const anteilig = !ausserhalb && monthTargetMinutes !== emp.targetMinutes;
   const stunden = emp.targetMinutes / 60;
   const info = splitInfo(stunden, emp.employmentType);
   const tooMany = stunden > WARN_HOURS;
@@ -200,13 +235,18 @@ function EmployeeSummaryRow({ emp, year }: { emp: Employee; year: number }) {
   const urlaubJahr = vacationDaysInYear(emp, year);
 
   return (
-    <div className="flex-1 min-w-0">
+    <div className={`flex-1 min-w-0 ${ausserhalb ? "opacity-50" : ""}`}>
       <div className="flex items-center gap-2">
         <span className="font-medium text-slate-900 truncate">{emp.name}</span>
         <span className="shrink-0 rounded bg-slate-100 text-slate-600 text-[11px] px-1.5 py-0.5">
           {employmentShortVi(emp.employmentType)}
         </span>
         {tooMany && <span className="shrink-0 text-amber-600 text-xs">⚠</span>}
+        {ausserhalb && (
+          <span className="shrink-0 rounded bg-slate-200 text-slate-600 text-[11px] px-1.5 py-0.5">
+            không làm tháng này
+          </span>
+        )}
       </div>
       <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
         <span>
@@ -221,6 +261,16 @@ function EmployeeSummaryRow({ emp, year }: { emp: Employee; year: number }) {
         {urlaubJahr > 0 ? (
           <span className="text-slate-400">· nghỉ {urlaubJahr} ngày/năm</span>
         ) : null}
+        {emp.startDate || emp.endDate ? (
+          <span className="text-slate-400">
+            · {emp.startDate ? `từ ${dateDe(emp.startDate)}` : ""}
+            {emp.startDate && emp.endDate ? " " : ""}
+            {emp.endDate ? `đến ${dateDe(emp.endDate)}` : ""}
+          </span>
+        ) : null}
+        {anteilig && (
+          <span className="text-amber-700">· tháng này {monthTargetMinutes! / 60}h (theo số ngày làm)</span>
+        )}
       </div>
     </div>
   );
@@ -259,6 +309,7 @@ function EmployeeSheet({
   const anspruch = vacationEntitlement(draftEmp);
   const imMonat = vacationDatesInMonth(draftEmp, year, month);
   const zuVielUrlaub = imJahr > anspruch;
+  const datumFalsch = d.startDate !== "" && d.endDate !== "" && d.endDate < d.startDate;
 
   const toggleUrlaub = (iso: string) => {
     setD((prev) => ({
@@ -379,6 +430,35 @@ function EmployeeSheet({
             </label>
           </div>
 
+          {/* Ngày vào làm / nghỉ việc */}
+          <div className="border-t border-slate-100 pt-3">
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="text-xs text-slate-600">Ngày vào làm</span>
+                <input
+                  type="date"
+                  className={`${inputClass} w-full mt-1`}
+                  value={d.startDate}
+                  onChange={(e) => set("startDate", e.target.value)}
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs text-slate-600">Ngày làm cuối</span>
+                <input
+                  type="date"
+                  className={`${inputClass} w-full mt-1`}
+                  value={d.endDate}
+                  onChange={(e) => set("endDate", e.target.value)}
+                />
+              </label>
+            </div>
+            <p className={`mt-1 text-[11px] ${datumFalsch ? "text-rose-600" : "text-slate-400"}`}>
+              {datumFalsch
+                ? "Ngày làm cuối phải sau ngày vào làm."
+                : "Bỏ trống = không giới hạn. Tháng vào/nghỉ giữa chừng: giờ định mức tính theo số ngày làm."}
+            </p>
+          </div>
+
           {/* Nghỉ phép */}
           <div className="border-t border-slate-100 pt-3">
             <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -457,7 +537,8 @@ function EmployeeSheet({
                 </button>
                 <button
                   onClick={() => onSave(draftToEmployee(d))}
-                  className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+                  disabled={datumFalsch}
+                  className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-40"
                 >
                   Lưu
                 </button>

@@ -12,8 +12,11 @@ import { clearState, loadState, saveState, type PersistedState } from "../lib/st
 import { MIN_PASSWORD_LENGTH, hashPassword, passwordMatches } from "../lib/auth";
 import { isRemoteConfigured, loadRemote, saveRemote, type RemoteStatus } from "../lib/remote";
 import { createManualShift, updateShiftTimes } from "../lib/shiftOps";
+import { employeesForMonth } from "../lib/availability";
+import { publicHolidays } from "../lib/holidays";
 import {
   DEFAULT_WORK_HOURS,
+  isDayClosed,
   normalizeWorkHours,
   type DateOverride,
   type OverrideMap,
@@ -150,9 +153,39 @@ export function useSchedule() {
     return () => window.clearTimeout(timer);
   }, [schedule, originalShifts, passwordHash]);
 
+  /**
+   * Belegschaft DIESES Monats: wer laut Eintritt/Austritt beschäftigt ist, mit
+   * anteiligem Soll. Geplant, geprüft und gedruckt wird nur mit dieser Liste;
+   * die volle Liste (allEmployees) braucht nur der Tab Nhân viên.
+   */
+  const monthEmployees = useMemo(() => {
+    const holidays = publicHolidays(schedule.year);
+    const overrides = overridesToMap(schedule.dateOverrides);
+    return employeesForMonth(
+      schedule.employees,
+      schedule.year,
+      schedule.month,
+      (iso) => !isDayClosed(schedule.workHours, iso, holidays, overrides),
+    );
+  }, [schedule.employees, schedule.year, schedule.month, schedule.workHours, schedule.dateOverrides]);
+
+  /**
+   * Der Monat, wie ihn Plan, Dashboard und Stundenzettel sehen: nur die
+   * Belegschaft des Monats und deren Dienste. Gespeichert wird weiter der
+   * volle Stand – das hier ist nur die Sicht darauf.
+   */
+  const monthSchedule: Schedule = useMemo(() => {
+    const ids = new Set(monthEmployees.map((e) => e.id));
+    return {
+      ...schedule,
+      employees: monthEmployees,
+      shifts: schedule.shifts.filter((s) => ids.has(s.employeeId)),
+    };
+  }, [schedule, monthEmployees]);
+
   const validation: ValidationResult = useMemo(
-    () => validateSchedule(schedule.employees, schedule.shifts, schedule.year),
-    [schedule.employees, schedule.shifts, schedule.year],
+    () => validateSchedule(monthEmployees, monthSchedule.shifts, schedule.year),
+    [monthEmployees, monthSchedule.shifts, schedule.year],
   );
 
   /**
@@ -163,22 +196,22 @@ export function useSchedule() {
    * der Scheduler tut sein Bestes und schweigt, wenn es nicht reicht.
    */
   const peakGaps = useMemo(() => {
-    if (schedule.shifts.length === 0) return [];
+    if (monthSchedule.shifts.length === 0) return [];
     return analyzeSchedule({
       year: schedule.year,
       month: schedule.month,
       workHours: schedule.workHours,
       overrides: overridesToMap(schedule.dateOverrides),
-      employees: schedule.employees,
-      shifts: schedule.shifts,
+      employees: monthEmployees,
+      shifts: monthSchedule.shifts,
     }).peakViolations;
   }, [
     schedule.year,
     schedule.month,
     schedule.workHours,
     schedule.dateOverrides,
-    schedule.employees,
-    schedule.shifts,
+    monthEmployees,
+    monthSchedule.shifts,
   ]);
 
   /**
@@ -318,7 +351,7 @@ export function useSchedule() {
         month: schedule.month,
         workHours: schedule.workHours,
         overrides: overridesToMap(schedule.dateOverrides),
-        employees: schedule.employees,
+        employees: monthEmployees,
       });
       setSchedule((s) => ({ ...s, shifts, lockedAt: undefined, printedWeeks: [] }));
       setOriginalShifts(shifts.map((sh) => ({ ...sh })));
@@ -330,7 +363,7 @@ export function useSchedule() {
     schedule.month,
     schedule.workHours,
     schedule.dateOverrides,
-    schedule.employees,
+    monthEmployees,
     isLocked,
   ]);
 
@@ -441,7 +474,10 @@ export function useSchedule() {
   }, []);
 
   return {
-    schedule,
+    /** Sicht auf den geplanten Monat (nur dessen Belegschaft). */
+    schedule: monthSchedule,
+    /** Alle Mitarbeiter, auch die außerhalb des Monats – für den Tab Nhân viên. */
+    allEmployees: schedule.employees,
     originalShifts,
     validation,
     peakGaps,
