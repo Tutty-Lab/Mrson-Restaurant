@@ -1,5 +1,5 @@
 // ============================================================================
-// Kundennachfrage-Konzept: Tagesgewichte je Wochentag.
+// Kundennachfrage-Konzept: Tagesgewichte + gewünschte Spätschicht-Anteile.
 // ============================================================================
 
 import { eachDayOfInterval, endOfMonth, format, getDay, startOfMonth } from "date-fns";
@@ -16,7 +16,8 @@ export type WeekdayKey =
 /**
  * Nachfrage-Gewichte je Wochentag (keine Mitarbeiterzahlen!).
  * Vorgabe des Chefs (Mrson Restaurant): „voll wird es am Wochenende".
- * Montag ist geschlossen. Feiertage zählen wie Sonntag.
+ * Montag ist geschlossen (siehe closedWeekdays in workHours). Das Gewicht
+ * steuert nur, wie viele Stunden ein offener Tag bekommt.
  */
 export const DAY_WEIGHTS: Record<WeekdayKey, number> = {
   monday: 1.0, // geschlossen (Gewicht nur relevant, falls doch geöffnet)
@@ -26,6 +27,22 @@ export const DAY_WEIGHTS: Record<WeekdayKey, number> = {
   friday: 1.5,
   saturday: 1.7,
   sunday: 1.6,
+};
+
+/**
+ * Gewünschter Anteil an Spätschicht-Stunden je Wochentag.
+ * Mrson ist ein Restaurant mit Abendgeschäft (11:30–22:00). Das Gewicht liegt
+ * deshalb ÜBER der Hälfte – anders als bei einem Mittags-Imbiss – und am
+ * Wochenende noch etwas höher.
+ */
+export const LATE_SHIFT_RATIOS: Record<WeekdayKey, number> = {
+  monday: 0.55,
+  tuesday: 0.55,
+  wednesday: 0.55,
+  thursday: 0.55,
+  friday: 0.6,
+  saturday: 0.6,
+  sunday: 0.6,
 };
 
 /** date-fns getDay(): 0=So ... 6=Sa  ->  WeekdayKey. */
@@ -89,6 +106,14 @@ export function datesOfMonth(year: number, month: number): string[] {
   const first = startOfMonth(new Date(year, month - 1, 1));
   const last = endOfMonth(first);
   return eachDayOfInterval({ start: first, end: last }).map((d) => format(d, "yyyy-MM-dd"));
+}
+
+export function dayWeightOf(isoDate: string): number {
+  return DAY_WEIGHTS[weekdayKeyOf(parseIsoDate(isoDate))];
+}
+
+export function lateRatioOf(isoDate: string): number {
+  return LATE_SHIFT_RATIOS[weekdayKeyOf(parseIsoDate(isoDate))];
 }
 
 /** ISO "yyyy-MM-dd" -> lokales Date (ohne Zeitzonen-Verschiebung). */

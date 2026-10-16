@@ -51,3 +51,28 @@ export function weeksOfMonth(year: number, month: number): MonthWeek[] {
       label: `${shortDe(dates[0])}–${shortDe(dates[dates.length - 1])}`,
     }));
 }
+
+/**
+ * Die sechs Tage vor dem Monatsersten – so weit kann eine Kalenderwoche oder
+ * eine erlaubte Sechs-Tage-Kette in den Vormonat zurückreichen.
+ */
+export const CARRY_OVER_DAYS = 6;
+
+/**
+ * Dienste vom Ende des Vormonats, die für den neuen Monat noch zählen
+ * (Minijob-Wochendeckel, Tage je Woche, Sechs-Tage-Kette). `Schedule` hält
+ * nur einen Monat; ohne diesen Vorlauf wäre der Vormonat beim Planen
+ * vergessen – siehe GenerateInput.priorShifts.
+ */
+export function carryOverFor<T extends { date: string }>(
+  shifts: T[],
+  year: number,
+  month: number,
+): T[] {
+  const first = parseIsoDate(datesOfMonth(year, month)[0]);
+  const from = new Date(first);
+  from.setDate(from.getDate() - CARRY_OVER_DAYS);
+  const von = format(from, "yyyy-MM-dd");
+  const bis = format(first, "yyyy-MM-dd");
+  return shifts.filter((s) => s.date >= von && s.date < bis);
+}

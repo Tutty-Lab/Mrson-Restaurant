@@ -10,6 +10,7 @@ import { MONTH_NAMES_DE } from "../lib/dateFormat";
 import { publicHolidayNames } from "../lib/holidays";
 import { format } from "date-fns";
 import { employmentLabelDe } from "../lib/employment";
+import { employedOn } from "../lib/availability";
 
 // Deutscher Monats-Titel für das offizielle Dokument.
 function monthLabelDe(year: number, month: number): string {
@@ -34,22 +35,12 @@ export function StundenzettelPage({
   periodLabel?: string;
 }) {
   const rows = dates ?? datesOfMonth(schedule.year, schedule.month);
-  // MEHRERE Dienste je Tag: wer mittags und abends arbeitet, hat zwei. Vorher
-  // stand hier eine Map auf EINEN Dienst – der zweite fiel lautlos aus dem
-  // Stundenzettel, und damit aus der Lohnabrechnung.
-  const byDate = new Map<string, Shift[]>();
+  const byDate = new Map<string, Shift>();
   for (const s of schedule.shifts) {
-    if (s.employeeId !== employee.id) continue;
-    const liste = byDate.get(s.date);
-    if (liste) liste.push(s);
-    else byDate.set(s.date, [s]);
+    if (s.employeeId === employee.id) byDate.set(s.date, s);
   }
-  for (const liste of byDate.values()) liste.sort((a, b) => a.startMinutes - b.startMinutes);
 
-  // Summe nur über die gezeigten Tage – beim Wochen-Zettel zählt nur die Woche.
-  const totalMinutes = rows
-    .flatMap((d) => byDate.get(d) ?? [])
-    .reduce((a, s) => a + s.paidMinutes, 0);
+  const totalMinutes = rows.reduce((a, d) => a + (byDate.get(d)?.paidMinutes ?? 0), 0);
   const holidayNames = publicHolidayNames(schedule.year);
   const closedByDate = new Map(
     schedule.dateOverrides.filter((o) => o.closed).map((o) => [o.date, o] as const),
@@ -73,19 +64,14 @@ export function StundenzettelPage({
         <Info label="Beschäftigungsart" value={employmentLabelDe(employee.employmentType)} />
         <Info label="Mitarbeiter" value={employee.name} />
         <Info label="Monat" value={MONTH_NAMES_DE[schedule.month - 1]} />
-        {/*
-          Sollstunden bleibt auf dem Zettel bewusst LEER: der Betrieb trägt den
-          Wert von Hand ein (Ausdruck wie PDF). Die geplante Zahl steht in der
-          App (Tab Nhân viên) und gehört nicht auf das Dokument.
-        */}
-        <Info label="Sollstunden" blank />
         <Info label="Jahr" value={String(schedule.year)} />
       </div>
 
-      <table className="stundenzettel-table w-full text-[11px]">
+      <table className="w-full border-collapse text-[11px]">
         <thead>
           <tr className="bg-slate-100">
-            <Th>Datum / Wochentag</Th>
+            <Th>Datum</Th>
+            <Th>Wochentag</Th>
             <Th>Arbeitsbeginn</Th>
             <Th>Arbeitsende</Th>
             <Th>Pause</Th>
@@ -95,121 +81,39 @@ export function StundenzettelPage({
         </thead>
         <tbody>
           {rows.map((d) => {
-            const dienste = [...(byDate.get(d) ?? [])].sort(
-              (a, b) => a.startMinutes - b.startMinutes,
-            );
+            const s = byDate.get(d);
             const wd = WEEKDAY_LABELS_DE[weekdayKeyOf(parseIsoDate(d))];
             const holiday = holidayNames.get(d);
             const closed = closedByDate.get(d);
             const isWeekend = wd === "Samstag" || wd === "Sonntag";
-            const rowCls = isWeekend || holiday || closed ? "bg-slate-50" : "";
-            const datum = format(parseIsoDate(d), "dd.MM.yyyy");
-
-            if (dienste.length === 0) {
-              const bemerkung = closed
-                ? closed.note || "Betriebsruhe"
-                : holiday
-                  ? `Frei (Feiertag: ${holiday})`
-                  : "Frei";
-              return (
-                <tr key={d} className={rowCls}>
-                  <Td className="whitespace-nowrap align-middle">
-                    <div className="font-semibold text-slate-800">{datum}</div>
-                    <div className="text-slate-500">{wd}</div>
-                  </Td>
-                  <Td className="text-center" />
-                  <Td className="text-center" />
-                  <Td className="text-center" />
-                  <Td className="text-center">0,00</Td>
-                  <Td className="text-left text-slate-500">{bemerkung}</Td>
-                </tr>
-              );
+            let bemerkung: string;
+            if (s) {
+              bemerkung = holiday ? `Feiertag: ${holiday}` : "";
+            } else if (!employedOn(employee, d)) {
+              bemerkung = "Nicht beschäftigt";
+            } else if (closed) {
+              bemerkung = closed.note || "Betriebsruhe";
+            } else if (holiday) {
+              bemerkung = `Frei (Feiertag: ${holiday})`;
+            } else {
+              bemerkung = "Frei";
             }
-
-            if (dienste.length === 1) {
-              const x = dienste[0];
-              return (
-                <tr key={d} className={rowCls}>
-                  <Td className="whitespace-nowrap align-middle">
-                    <div className="font-semibold text-slate-800">{datum}</div>
-                    <div className="text-slate-500">{wd}</div>
-                  </Td>
-                  <Td className="text-center font-medium align-middle">{minutesToTime(x.startMinutes)}</Td>
-                  <Td className="text-center font-medium align-middle">{minutesToTime(x.endMinutes)}</Td>
-                  <Td className="text-center align-middle">{x.pauseMinutes} Min</Td>
-                  <Td className="text-center font-medium align-middle">{minutesToDecimalHours(x.paidMinutes)}</Td>
-                  <Td className="text-left text-slate-500 align-middle">
-                    {holiday ? `Feiertag: ${holiday}` : ""}
-                  </Td>
-                </tr>
-              );
-            }
-
-            // Ngày có từ 2 ca trở lên (ví dụ: thứ 3 làm ca sáng và ca chiều):
-            // Giữ nguyên 1 dòng cho ngày đó, các ô ca được kẻ vạch phân tách rõ ràng.
             return (
-              <tr key={d} className={rowCls}>
-                <Td className="whitespace-nowrap align-middle">
-                  <div className="font-semibold text-slate-800">{datum}</div>
-                  <div className="text-slate-500">{wd}</div>
-                </Td>
-                <Td noPadding className="text-center font-medium align-middle">
-                  {dienste.map((x, i) => (
-                    <div
-                      key={i}
-                      className={`py-[3px] px-2 ${i > 0 ? "border-t border-slate-300 shift-split-divider" : ""}`}
-                    >
-                      {minutesToTime(x.startMinutes)}
-                    </div>
-                  ))}
-                </Td>
-                <Td noPadding className="text-center font-medium align-middle">
-                  {dienste.map((x, i) => (
-                    <div
-                      key={i}
-                      className={`py-[3px] px-2 ${i > 0 ? "border-t border-slate-300 shift-split-divider" : ""}`}
-                    >
-                      {minutesToTime(x.endMinutes)}
-                    </div>
-                  ))}
-                </Td>
-                <Td noPadding className="text-center align-middle">
-                  {dienste.map((x, i) => (
-                    <div
-                      key={i}
-                      className={`py-[3px] px-2 ${i > 0 ? "border-t border-slate-300 shift-split-divider" : ""}`}
-                    >
-                      {x.pauseMinutes} Min
-                    </div>
-                  ))}
-                </Td>
-                <Td noPadding className="text-center font-medium align-middle">
-                  {dienste.map((x, i) => (
-                    <div
-                      key={i}
-                      className={`py-[3px] px-2 ${i > 0 ? "border-t border-slate-300 shift-split-divider" : ""}`}
-                    >
-                      {minutesToDecimalHours(x.paidMinutes)}
-                    </div>
-                  ))}
-                </Td>
-                <Td noPadding className="text-left text-slate-500 align-middle">
-                  {dienste.map((_, i) => (
-                    <div
-                      key={i}
-                      className={`py-[3px] px-2 ${i > 0 ? "border-t border-slate-300 shift-split-divider" : ""}`}
-                    >
-                      {i === 0 && holiday ? `Feiertag: ${holiday}` : "\u00A0"}
-                    </div>
-                  ))}
-                </Td>
+              <tr key={d} className={isWeekend || holiday || closed ? "bg-slate-50" : ""}>
+                <Td>{format(parseIsoDate(d), "dd.MM.yyyy")}</Td>
+                <Td>{wd}</Td>
+                <Td className="text-center">{s ? minutesToTime(s.startMinutes) : ""}</Td>
+                <Td className="text-center">{s ? minutesToTime(s.endMinutes) : ""}</Td>
+                <Td className="text-center">{s ? `${s.pauseMinutes} Min` : ""}</Td>
+                <Td className="text-center">{s ? minutesToDecimalHours(s.paidMinutes) : "0,00"}</Td>
+                <Td className="text-left text-slate-500">{bemerkung}</Td>
               </tr>
             );
           })}
         </tbody>
         <tfoot>
           <tr className="font-semibold bg-slate-100">
-            <Td className="text-left" colSpan={4}>
+            <Td className="text-left" colSpan={5}>
               Gesamtstunden
             </Td>
             <Td className="text-center">{minutesToDecimalHours(totalMinutes)}</Td>
@@ -220,21 +124,11 @@ export function StundenzettelPage({
 
       {/*
         Nur die tatsächlich geleisteten Stunden werden gedruckt. Sollstunden und
-        Differenz bleiben leer – sie werden auf dem Papier von Hand ergänzt.
+        Differenz sind auf Wunsch des Betriebs vom Zettel verschwunden.
       */}
-      <div className="mt-3 grid grid-cols-3 gap-4 text-[12px]">
-        <div>
-          <div className="text-slate-500">Gesamtstunden</div>
-          <div className="font-semibold">{minutesToDecimalHours(totalMinutes)} h</div>
-        </div>
-        <div>
-          <div className="text-slate-500">Sollstunden</div>
-          <BlankLine />
-        </div>
-        <div>
-          <div className="text-slate-500">Differenz</div>
-          <BlankLine />
-        </div>
+      <div className="mt-3 text-[12px]">
+        <div className="text-slate-500">Gesamtstunden</div>
+        <div className="font-semibold">{minutesToDecimalHours(totalMinutes)} h</div>
       </div>
 
       <div className="mt-10 grid grid-cols-3 gap-8 text-[11px]">
@@ -246,28 +140,18 @@ export function StundenzettelPage({
   );
 }
 
-/** `blank` = Feld zum Ausfüllen von Hand statt eines gedruckten Werts. */
-function Info({ label, value, blank }: { label: string; value?: string; blank?: boolean }) {
+function Info({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex gap-2">
       <span className="text-slate-500 min-w-[110px]">{label}:</span>
-      {blank ? (
-        <span className="flex-1 border-b border-slate-400" />
-      ) : (
-        <span className="font-medium">{value}</span>
-      )}
+      <span className="font-medium">{value}</span>
     </div>
   );
 }
 
-/** Leere Schreiblinie – markiert ein Feld, das von Hand ergänzt wird. */
-function BlankLine() {
-  return <div className="border-b border-slate-400 h-[1.2em] w-full max-w-[80px]" />;
-}
-
 function Th({ children, className = "" }: { children?: React.ReactNode; className?: string }) {
   return (
-    <th className={`px-2 py-1 text-center font-semibold ${className}`}>
+    <th className={`border border-slate-300 px-2 py-1 text-center font-semibold ${className}`}>
       {children}
     </th>
   );
@@ -277,15 +161,13 @@ function Td({
   children,
   className = "",
   colSpan,
-  noPadding,
 }: {
   children?: React.ReactNode;
   className?: string;
   colSpan?: number;
-  noPadding?: boolean;
 }) {
   return (
-    <td colSpan={colSpan} className={`${noPadding ? "p-0" : "px-2 py-[2px]"} ${className}`}>
+    <td colSpan={colSpan} className={`border border-slate-300 px-2 py-[3px] ${className}`}>
       {children}
     </td>
   );

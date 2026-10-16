@@ -1,137 +1,138 @@
+import type { WeekdayKey } from "./lib/demand";
+
 // ============================================================================
 // Zentrale Datentypen. Intern wird IMMER in Minuten (Integer) gerechnet,
 // niemals mit Fließkomma-Stunden.
 // ============================================================================
 
-import type { WeekdayKey } from "./lib/demand";
-import type { DateOverride, DayWindow, WorkHoursConfig } from "./lib/workHours";
+import type { DateOverride, WorkHoursConfig } from "./lib/workHours";
 
 /**
  * Anstellungsart. MINIJOB ist arbeitsrechtlich eine Form der Teilzeit und wird
  * bei der Schichtplanung auch genauso behandelt – die Trennung dient der
- * Belegschaftsstruktur und dem Stundenzettel, nicht der Planung selbst.
+ * Obergrenze und der Belegschaftsstruktur, nicht der Planung selbst.
  */
 export type EmploymentType = "VOLLZEIT" | "TEILZEIT" | "MINIJOB";
 
 /**
- * Gesetzlicher Mindesturlaub in ARBEITSTAGEN je Jahr (§ 3 BUrlG: 24 Werktage
- * bei 6 Tagen die Woche). Teilzeit: vier Tage die Woche => 24 × 4/6.
+ * Minijob: höchstens 10 Stunden pro Woche – so die Angabe des Betriebs.
+ *
+ * Die Woche ist die harte Grenze und wird beim Planen Woche für Woche
+ * eingehalten. Der Monatswert daneben ist nur die Umrechnung fürs Soll:
+ * 10 h x 52/12 Wochen = 43 h im Monat.
+ */
+/**
+ * Höchstzahl der Beschäftigten – gezählt wird die GESAMTE Belegschaft.
+ *
+ * Früher standen hier zwei getrennte Zahlen (höchstens 3 Stammkräfte und 5
+ * Minijobs). Der Betrieb hat das später auf eine einzige Obergrenze
+ * zusammengezogen: wie sich die sieben Leute auf Vollzeit, Teilzeit und
+ * Minijob verteilen, ist seine Sache und keine Regel der App.
+ *
+ * Angabe des Betriebs, keine Rechtsvorschrift – deshalb eine Warnung und kein
+ * harter Riegel.
+ */
+export const MAX_EMPLOYEES = 7;
+
+export const MINIJOB_MAX_WEEKLY_HOURS = 10;
+export const MINIJOB_MAX_MONTHLY_HOURS = Math.floor((MINIJOB_MAX_WEEKLY_HOURS * 52) / 12);
+
+/**
+ * Ausnahme vom Wochendeckel, nur um das Monats-Soll zu erreichen.
+ *
+ * Der Betrieb hat die Minijobs mit „rund 10 h die Woche" beschrieben, daraus
+ * stammen die 43 h im Monat. Ein Monat mit Feiertagen oder angebrochenen
+ * Wochen hat aber nur vier nutzbare Wochen: 4 x 10 h = 40 h, die 43 h gehen
+ * dann rechnerisch nicht auf (Dezember 2026 bei den Fr/So- und Sa/So-Kräften).
+ *
+ * Geplant wird weiter mit 10 h. Erst der Nachschlag am Ende (fillShortfalls)
+ * darf eine Woche bis hierhin verlängern – und nur für jemanden, der sonst
+ * unter seinem Vertrag bliebe. Soll das nicht sein: auf 10 setzen.
+ */
+export const MINIJOB_FLEX_WEEKLY_HOURS = 12;
+
+/**
+ * Jahresurlaub in ARBEITSTAGEN, nicht in Stunden.
+ *
+ * So rechnet das Bundesurlaubsgesetz: der Anspruch hängt daran, an wie vielen
+ * Tagen die Woche jemand arbeitet, nicht wie lange. Wer nur eine Stunde
+ * kommt, hat trotzdem einen ganzen Arbeitstag verbraucht. Bei fünf Tagen die
+ * Woche sind es 20 Tage im Jahr, bei sechs Tagen 24.
+ *
+ * Der Betrieb gibt für die Stammkräfte 24 vor (also die Sechs-Tage-Woche) und
+ * für Minijob 8. Teilzeit arbeitet an weniger Tagen der Woche; weil der
+ * Anspruch an den Arbeitstagen je Woche hängt, ist er entsprechend kleiner –
+ * bei vier Tagen die Woche 24 × 4/6 = 16.
+ *
+ * Wird das überschritten, warnt die App – sie hindert aber niemanden: mehr
+ * Urlaub als der gesetzliche Mindestanspruch ist erlaubt, er kann vertraglich
+ * vereinbart oder aus dem Vorjahr übertragen sein.
  */
 export const URLAUB_DAYS_PER_YEAR: Record<EmploymentType, number> = {
   VOLLZEIT: 24,
+  // Teilzeit: vier Arbeitstage die Woche => 24 × 4/6.
   TEILZEIT: 16,
   MINIJOB: 8,
 };
 
-/** Bộ phận: Bồi (Service) oder Bếp (Küche). Nur Anzeige – der Planer nutzt es (noch) nicht. */
-export type Station = "SERVICE" | "KITCHEN";
-
 export type ShiftType = "EARLY" | "LATE" | "CUSTOM";
-
-/** „Khung giờ ưu tiên": an diesen Wochentagen möglichst in diesem Fenster arbeiten. */
-export type PreferredWindow = {
-  days: WeekdayKey[];
-  startMinutes: number;
-  endMinutes: number;
-};
 
 export type Employee = {
   id: string;
   name: string;
   employmentType: EmploymentType;
-  /** Bồi oder Bếp. Fehlt = Bồi (ältere Daten). */
-  station?: Station;
-  /**
-   * Monatliches Soll in Minuten (Integer). 176 h => 10560.
-   *
-   * Bei Viet Cuisine wird der Vertrag in WOCHENstunden angegeben (39 h/Woche
-   * = Vollzeit). Ist weeklyHours gesetzt, ist DAS die Quelle und targetMinutes
-   * wird je Monat daraus berechnet (siehe contract.ts). targetMinutes bleibt
-   * trotzdem befüllt, damit ältere gespeicherte Daten einen Wert haben.
-   */
+  /** Monatliches Soll in Minuten (Integer). 176 h => 10560. */
   targetMinutes: number;
   /**
-   * Vertragliche WOCHENstunden. Gesetzt => targetMinutes wird je Monat daraus
-   * abgeleitet: Wochenstunden × (offene Tage des Monats ÷ 6 offene Tage/Woche).
-   * Sechs offene Tage, weil der Laden montags zu ist (Di–So).
-   */
-  weeklyHours?: number;
-  /**
-   * Feste Schicht: diese Person arbeitet an ihren Arbeitstagen IMMER in genau
-   * diesem Zeitfenster (Viet Cuisine: eine Kraft nur 6:30–14:30, Vorbereitung
-   * ab vor Ladenöffnung). Gesetzt => der Scheduler legt für sie nur Dienste in
-   * diesem Fenster an, unabhängig von den Öffnungsblöcken.
-   */
-  fixedShift?: DayWindow;
-  /**
-   * Erster Arbeitstag als ISO-Datum "yyyy-MM-dd" (Eintritt/Vertragsbeginn).
-   *
-   * Gesetzt => Tage VOR diesem Datum sind gesperrt (kein Dienst) UND zählen
-   * nicht ins Monats-Soll. So wird ein Eintritt mitten im Monat korrekt
-   * abgebildet: die Person schuldet nur die Stunden ab ihrem Startdatum, statt
-   * als „zu wenig geplant" gemeldet zu werden. Fehlt = von Monatsanfang an dabei.
-   */
-  startDate?: string;
-  /**
-   * Letzter Arbeitstag (Austritt), ISO "yyyy-MM-dd". Danach wird niemand mehr
-   * eingeplant, und die Tage nach dem Austritt zählen nicht ins Monats-Soll –
-   * wer am 15. aufhört, bekommt für diesen Monat nur das halbe Soll und keine
-   * Warnung „zu wenig geplant". Fehlt = arbeitet weiter (kein Austritt).
-   */
-  endDate?: string;
-  /**
-   * Urlaubstage als ISO-Daten "yyyy-MM-dd", über das GANZE Jahr (Anspruch ist
-   * ein Jahresanspruch). An diesen Tagen wird nicht geplant; das Monats-Soll
-   * bleibt. Die Tage trägt IMMER der Nutzer ein.
-   */
-  vacationDates?: string[];
-  /**
    * Wochentage, an denen diese Person überhaupt eingeplant werden darf.
-   * Fehlt/leer = jeder Tag ist möglich (keine Einschränkung).
+   *
+   * Fehlt das Feld oder ist es leer, gilt: jeder Tag ist möglich. Damit deckt
+   * EIN Feld beide Wünsche des Betriebs ab – "die Minijob-Kraft arbeitet fest
+   * Freitag und Sonntag" (nur diese beiden ankreuzen) und "die Vollzeitkraft
+   * hat montags frei" (Montag abwählen).
    */
   availableWeekdays?: WeekdayKey[];
   /**
-   * Höchstzahl der Arbeitstage je Woche. Fehlt = nur die gesetzliche
-   * Sechs-Tage-Regel begrenzt.
+   * Höchstzahl der Arbeitstage je Woche.
+   *
+   * Etwas anderes als availableWeekdays: dort steht, WELCHE Tage in Frage
+   * kommen, hier, WIE VIELE davon genutzt werden dürfen. Der Betrieb nennt
+   * beides – "arbeitet Sonntag und Freitag" ist das eine, "arbeitet 5 Tage die
+   * Woche" das andere, und wer sechs mögliche Tage hat, aber nur fünf davon
+   * arbeitet, braucht diese Zahl.
+   *
+   * Fehlt das Feld, begrenzt nur die Sechs-Tage-Regel des Gesetzes.
    */
   maxDaysPerWeek?: number;
   /**
-   * Muss diese Person an FEIERTAGEN im Dienst sein?
+   * Urlaubstage als ISO-Daten "yyyy-MM-dd", über das GANZE Jahr.
    *
-   * Vorgabe des Betriebs: „Những ngày lễ phải có bạn Bá Việt Nguyen trong ca".
-   * Gesetzt => der Scheduler plant sie an jedem geöffneten Feiertag ein, und
-   * die Prüfung meldet es, wenn sie doch fehlt.
+   * Bewusst das ganze Jahr und nicht nur der geplante Monat: der Anspruch ist
+   * ein Jahresanspruch, und ob jemand seine 24 Tage überschreitet, lässt sich
+   * nur am Jahr ablesen. Der Scheduler nimmt sich daraus die Tage des Monats,
+   * den er gerade plant.
+   *
+   * Die Tage trägt IMMER der Nutzer ein. Der Automat darf keinen Urlaub
+   * verteilen – wer wann frei nimmt, ist eine Absprache im Betrieb.
    */
-  requiredOnHolidays?: boolean;
+  vacationDates?: string[];
   /**
-   * Dieselbe PERSON in mehreren Filialen (z. B. Bá Việt Nguyễn: Vollzeit im
-   * Shin, Minijob im Nieu). Gleicher Schlüssel = gleicher Mensch; der Planer
-   * belegt dann keinen Tag doppelt, denn die Läden liegen weit auseinander.
+   * Beschäftigungszeitraum als ISO-Daten "yyyy-MM-dd", beide EINSCHLIESSLICH:
+   * startDate = erster Arbeitstag (Eintritt), endDate = letzter Arbeitstag
+   * (Austritt). Fehlt ein Wert, ist der Zeitraum nach dieser Seite offen.
+   *
+   * Grund: `Schedule` hält nur einen Monat, die Belegschaft wechselt aber über
+   * das Jahr (eine Aushilfe nur Januar–Februar, eine andere ab Juni). Ohne
+   * diese Daten musste man vor jedem Monat Leute löschen und neu anlegen –
+   * und verlor dabei ihren Urlaub. Wer im Monat gar nicht beschäftigt ist,
+   * verschwindet aus Plan, Prüfung und Stundenzettel; wer mitten im Monat
+   * kommt oder geht, bekommt das Soll anteilig (availability.ts).
    */
-  personKey?: string;
-  /**
-   * „Độ dài ca" (weich, übernommen aus Thienlong): bezahlte Stunden je
-   * Arbeitstag, z. B. 3–4 h. Der Planer bleibt darin, solange das Soll der
-   * Woche so erreichbar ist; sonst gilt die Standardlänge. Fehlt = Standard.
-   */
-  shiftHours?: { min: number; max: number };
-  /**
-   * „Rải đều trong tháng" (weich): mit „Độ dài ca" lieber mehr, dafür kürzere
-   * Arbeitstage. Die Wochen sind hier ohnehin gleichmäßig verteilt (das
-   * Monats-Soll wird je Woche nach offenen Tagen aufgeteilt).
-   */
-  spreadEvenly?: boolean;
-  /**
-   * „Khung giờ ưu tiên" (weich): Wunsch-Tage und -Uhrzeiten. Ist mindestens ein
-   * Fenster gesetzt, kostet jede Arbeitsminute außerhalb einen Aufschlag – an
-   * Tagen ohne Fenster also der ganze Dienst. Besetzungsregeln gehen vor.
-   */
-  preferredWindows?: PreferredWindow[];
+  startDate?: string;
+  endDate?: string;
 };
 
 export type Shift = {
-  /** Explicit unpaid break, excluded from staffing coverage. */
-  pauseStartMinutes?: number;
   id: string;
   employeeId: string;
   /** ISO-Datum "yyyy-MM-dd". */
@@ -170,28 +171,17 @@ export type Schedule = {
   lockedAt?: string;
   /** Bereits gedruckte Wochen, als ISO-Datum des jeweiligen Montags. */
   printedWeeks?: string[];
-  /** Bereits angewandte einmalige Datenänderungen (siehe lib/migrations.ts). */
-  migrations?: string[];
   /**
-   * Der Betrieb hat die Warnungen „chưa đủ giờ định mức" für DIESEN Plan
-   * bewusst hingenommen (Popup nach „Tạo lịch"). Ein neuer Plan setzt es zurück.
+   * Dienste der letzten sechs Tage VOR diesem Monat, gemerkt beim Wechsel in
+   * den Folgemonat. Werden nicht angezeigt oder gedruckt – sie sorgen nur
+   * dafür, dass Wochendeckel und Sechs-Tage-Regel über die Monatsgrenze
+   * hinweg gelten (scheduler.ts, GenerateInput.priorShifts).
    */
-  underQuotaAccepted?: boolean;
-  /**
-   * Gespeicherte Pläne ANDERER Monate, Schlüssel "yyyy-MM" (lib/monthArchive.ts).
-   * Beim Monatswechsel wird der aktuelle Plan hier abgelegt und der des
-   * Zielmonats (falls vorhanden) wieder geladen – kein Monat geht verloren.
-   */
-  archive?: Record<string, MonthArchive>;
+  carryOver?: Shift[];
 };
 
-/** Ein gespeicherter Monatsplan (mit Sperre und „Bỏ qua cảnh báo" dieses Monats). */
-export type MonthArchive = {
-  shifts: Shift[];
-  originalShifts: Shift[];
-  /** Zeitpunkt des Ablegens (ISO). */
-  savedAt: string;
-  lockedAt?: string;
-  printedWeeks?: string[];
-  underQuotaAccepted?: boolean;
+/** Ein einzelnes zu verplanendes Schicht-Token (Ergebnis von splitTargetHours). */
+export type ShiftToken = {
+  employeeId: string;
+  paidMinutes: number;
 };
