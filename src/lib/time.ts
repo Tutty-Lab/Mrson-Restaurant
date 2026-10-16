@@ -25,27 +25,16 @@ export function minutesToTime(totalMinutes: number): string {
 }
 
 /**
- * Pausenregel (Vorgabe des Chefs, Mrson Restaurant):
- * „Das Lokal macht keine Pause, aber nach spätestens 4 Stunden muss die
- * Kraft eine Pause nehmen."
+ * Pausenregel:
+ * - Làm việc liên tục trên 6 tiếng (> 6h): nghỉ giải lao 30 phút.
+ * - Làm việc liên tục trên 8 tiếng (> 8h): nghỉ giải lao 60 phút.
+ * - Từ 6 tiếng trở xuống (<= 6h): không tính nghỉ giải lao (0 phút).
  *
- *   bis 4 h  -> keine Pause
- *   über 4 h -> 30 Minuten
- *   ab 9 h   -> 45 Minuten (gesetzliches Minimum nach ArbZG §4)
- *
- * Der Betrieb ist damit strenger als das Gesetz, das erst über 6 h eine Pause
- * verlangt – so gewollt.
- *
- * Die Pause kommt ZUSÄTZLICH zur bezahlten Zeit: presence = paid + pause.
- * Eine 9-h-Schicht belegt damit 9,75 h Anwesenheit und passt noch in das
- * Fenster 11:30–22:00 (10,5 h).
- *
- * Alle Zeit-/Schichtberechnungen leiten sich von dieser einen Funktion ab –
- * eine andere Pausenstaffel zu fahren betrifft nur diese Stelle.
+ * Tiêu chuẩn này cao hơn hoặc bằng luật lao động Đức (§ 4 ArbZG: > 6h là 30 min, > 9h là 45 min).
  */
 export function calculatePause(paidMinutes: number): number {
-  if (paidMinutes >= 9 * 60) return 45;
-  if (paidMinutes > 4 * 60) return 30;
+  if (paidMinutes > 8 * 60) return 60;
+  if (paidMinutes > 6 * 60) return 30;
   return 0;
 }
 
@@ -80,6 +69,6 @@ export function minutesToShortHours(totalMinutes: number): string {
   const hours = totalMinutes / 60;
   const text = Number.isInteger(hours)
     ? String(hours)
-    : hours.toLocaleString("de-DE", { maximumFractionDigits: 2 });
+    : hours.toLocaleString("de-DE", { maximumFractionDigits: 1 });
   return `${text}h`;
 }

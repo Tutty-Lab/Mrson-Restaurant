@@ -2,20 +2,18 @@
 // Validierung des Dienstplans gegen alle geforderten Regeln.
 // ============================================================================
 
-import { vacationDaysInYear, vacationEntitlement } from "./availability";
-import {
-  MAX_EMPLOYEES,
-  MINIJOB_MAX_MONTHLY_HOURS,
-  MINIJOB_FLEX_WEEKLY_HOURS,
-  MINIJOB_MAX_WEEKLY_HOURS,
-  type Employee,
-  type Shift,
-} from "../types";
-import { calculatePause } from "./time";
+import type { Employee, Shift } from "../types";
+import { monthlyTargetMinutes, monthlyTargetMinutesFor, SCHEDULE_SLOT_MINUTES } from "./contract";
+import { calculatePause, minutesToShortHours } from "./time";
 import { maxConsecutiveRun } from "./consecutive";
 import { weekStartOf } from "./weeks";
-import { WEEKDAY_LABELS_VI, type WeekdayKey } from "./demand";
-import { MAX_SHIFT_HOURS } from "./scheduler";
+import { validPause } from "./staffing";
+import { mayWorkOn, onVacation, vacationDaysInYear, vacationEntitlement } from "./availability";
+import { publicHolidayNames } from "./holidays";
+import type { WorkHoursConfig } from "./workHours";
+import type { RuleId } from "./rules";
+import { minutesOutsidePreferred, ownShiftRangeMinutes, preferredWindowsOf } from "./preferredWindows";
+import { parseIsoDate, weekdayKeyOf } from "./demand";
 
 export type ValidationError = {
   employeeId?: string;
@@ -31,6 +29,8 @@ export type ValidationError = {
    * Zahl in der Mitarbeiterliste zu groß ist.
    */
   severity?: "error" | "warning";
+  /** Welche Regel (rules.ts) – entscheidet „Luật cứng" oder „Luật mềm" in der Anzeige. */
+  rule?: RuleId;
 };
 
 export type EmployeeSummary = {
@@ -48,109 +48,40 @@ export type ValidationResult = {
   summaries: EmployeeSummary[];
 };
 
-/** Ansage des Chefs: eine Schicht dauert höchstens 8 Stunden. */
+/**
+ * Höchste bezahlte Zeit an einem Tag: 9 Stunden. Liegt unter der Grenze des
+ * Arbeitszeitgesetzes (§ 3 ArbZG: bis zu 10 Stunden, wenn im Halbjahr auf 8
+ * ausgeglichen).
+ */
 const MAX_PAID_MINUTES = 8 * 60;
 const MAX_CONSECUTIVE_DAYS = 6;
-
-const WOCHENTAG_REIHENFOLGE: WeekdayKey[] = [
-  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
-];
-
-/**
- * Warum fehlen Stunden? Der Planer verteilt schon das Maximum, das die Regeln
- * hergeben – die Lücke kommt aus den Grenzen der Person selbst. „Tháng này
- * không đủ ngày" allein ließ den Betrieb ratlos zurück; hier steht, WELCHE
- * Grenze greift und was man ändern kann.
- */
-function grundFehlstunden(emp: Employee): string {
-  const grenzen: string[] = [];
-  if (emp.availableWeekdays?.length) {
-    const tage = WOCHENTAG_REIHENFOLGE.filter((d) => emp.availableWeekdays!.includes(d))
-      .map((d) => WEEKDAY_LABELS_VI[d]);
-    grenzen.push(`chỉ làm ${tage.join(" + ")}`);
-  }
-  if (emp.maxDaysPerWeek) grenzen.push(`tối đa ${emp.maxDaysPerWeek} ngày/tuần`);
-  grenzen.push(`mỗi ca tối đa ${MAX_SHIFT_HOURS}h`);
-  if (emp.employmentType === "MINIJOB") {
-    grenzen.push(`minijob khoảng ${MINIJOB_MAX_WEEKLY_HOURS}h/tuần (tối đa ${MINIJOB_FLEX_WEEKLY_HOURS}h)`);
-  }
-  return (
-    `Tháng này không xếp thêm được vì ${grenzen.join(", ")}. ` +
-    `Muốn đủ giờ thì giảm định mức hoặc cho làm thêm ngày.`
-  );
-}
 
 export function validateSchedule(
   employees: Employee[],
   shifts: Shift[],
-  /** Jahr des geplanten Monats – nötig für die Urlaubsprüfung. */
-  year: number = new Date().getFullYear(),
+  /** Jahr des geplanten Monats. Bleibt für die einheitliche Signatur erhalten. */
+  _year: number = new Date().getFullYear(),
   /**
-   * Dienste vom Ende des Vormonats (Schedule.carryOver). Zählen mit für die
-   * Kette und den Minijob-Wochendeckel, werden aber selbst nicht geprüft –
-   * sie gehören zum alten Plan.
+   * Offene Tage des geplanten Monats – nötig, um Wochenverträge (weeklyHours)
+   * in ein Monats-Soll umzurechnen. Fehlt der Wert, gilt targetMinutes direkt.
+   *
+   * Als Zahl: monatsweiter Wert, für alle gleich (Altpfad, z. B. Tests).
+   * Als ISO-Datumsliste der offenen Tage: das Soll wird je Person über ihre
+   * vertragswirksamen Tage gerechnet – so zählt ein Eintritt mitten im Monat
+   * (startDate) korrekt und löst keine falsche „zu wenig geplant"-Warnung aus.
    */
-  priorShifts: Shift[] = [],
+  openDays?: number | readonly string[],
+  /** Wochenplan des Ladens – gleicher Faktor für das Monats-Soll wie im Scheduler. */
+  workHours?: WorkHoursConfig,
 ): ValidationResult {
   const errors: ValidationError[] = [];
-
-  // ── Vorgaben des Betriebs zur Belegschaft ─────────────────────────────────
-  // Diese Regeln haengen nicht am Plan, sondern an der Mitarbeiterliste. Sie
-  // stehen trotzdem hier, damit ein Verstoss nicht erst beim Lohnbuero auffaellt.
-  // Obergrenze für die GESAMTE Belegschaft. Früher wurde getrennt gezählt
-  // (höchstens 3 Stammkräfte, höchstens 5 Minijobs); der Betrieb hat das auf
-  // eine einzige Zahl zusammengezogen. Wie sich die sieben Leute auf die
-  // Anstellungsarten verteilen, ist seine Sache.
-  if (employees.length > MAX_EMPLOYEES) {
-    errors.push({
-      message: `Quá số nhân viên: ${employees.length} người, tối đa ${MAX_EMPLOYEES}.`,
-    });
-  }
-
-  // Ein Soll mit Nachkommastelle lässt sich nicht planen: die Schichten sind
-  // ganze Stunden, und daraus entsteht nie eine halbe. Ohne diesen Hinweis
-  // bekommt die Kraft schlicht null Dienste, und niemand sieht warum.
-  for (const emp of employees) {
-    if (emp.targetMinutes % 60 === 0) continue;
-    errors.push({
-      employeeId: emp.id,
-      message:
-        `${emp.name}: định mức ${(emp.targetMinutes / 60).toFixed(2)}h không phải số giờ chẵn. ` +
-        `Ca chỉ tính theo giờ chẵn nên không xếp được — hãy làm tròn thành ` +
-        `${Math.round(emp.targetMinutes / 60)}h.`,
-    });
-  }
-
-  // Urlaub. Der Anspruch gilt fürs JAHR, geprüft wird deshalb gegen alle
-  // eingetragenen Tage dieses Jahres – nicht nur gegen den geplanten Monat.
-  // Es bleibt eine Warnung: mehr Urlaub als der gesetzliche Mindestanspruch
-  // ist erlaubt, er kann vertraglich vereinbart oder übertragen sein.
-  for (const emp of employees) {
-    const anspruch = vacationEntitlement(emp);
-    const genommen = vacationDaysInYear(emp, year);
-    if (genommen > anspruch) {
-      errors.push({
-        employeeId: emp.id,
-        severity: "warning",
-        message:
-          `${emp.name}: đã nghỉ phép ${genommen} ngày trong năm ${year}, ` +
-          `vượt ${anspruch} ngày theo quy định.`,
-      });
-    }
-  }
-
-  for (const emp of employees) {
-    if (emp.employmentType !== "MINIJOB") continue;
-    const hours = emp.targetMinutes / 60;
-    if (hours > MINIJOB_MAX_MONTHLY_HOURS) {
-      errors.push({
-        employeeId: emp.id,
-        message:
-          `${emp.name}: Minijob ${hours}h/tháng vượt trần ${MINIJOB_MAX_MONTHLY_HOURS}h ` +
-          `(${MINIJOB_MAX_WEEKLY_HOURS}h/tuần).`,
-      });
-    }
-  }
+  const sollOf = (e: Employee): number => {
+    if (openDays == null) return e.targetMinutes;
+    return typeof openDays === "number"
+      ? monthlyTargetMinutes(e, openDays)
+      : monthlyTargetMinutesFor(e, openDays, workHours);
+  };
+  const employeeById = new Map(employees.map((e) => [e.id, e] as const));
 
   const shiftsByEmployee = new Map<string, Shift[]>();
   for (const emp of employees) shiftsByEmployee.set(emp.id, []);
@@ -166,11 +97,24 @@ export function validateSchedule(
     const presence = shift.endMinutes - shift.startMinutes;
     const expectedPaid = presence - shift.pauseMinutes;
     const expectedPause = calculatePause(shift.paidMinutes);
+    const employee = employeeById.get(shift.employeeId);
+    if (employee && !mayWorkOn(employee, shift.date)) errors.push({ employeeId: employee.id, date: shift.date, rule: "days-off",
+      message: onVacation(employee, shift.date)
+        ? `${employee.name}: đã xếp vào ngày nghỉ phép ${shift.date}.`
+        : `${employee.name}: đã xếp vào ngày không thể làm ${shift.date}.`,
+    });
+    if (shift.pauseStartMinutes != null && !validPause(shift)) errors.push({ employeeId: shift.employeeId, date: shift.date, rule: "shift-length",
+      message: `Giờ nghỉ không hợp lệ ngày ${shift.date}.`,
+    });
+    if (employee?.weeklyHours != null && shift.pauseMinutes > 0 && shift.pauseStartMinutes == null) errors.push({ employeeId: shift.employeeId, date: shift.date, rule: "shift-length",
+      message: `Chưa xếp giờ bắt đầu nghỉ ngày ${shift.date}; cần giờ nghỉ cụ thể để kiểm tra đủ người.`,
+    });
 
     if (shift.endMinutes <= shift.startMinutes) {
       errors.push({
         employeeId: shift.employeeId,
         date: shift.date,
+        rule: "shift-length",
         message: `Giờ ra không sau giờ vào (${shift.date}).`,
       });
     }
@@ -178,13 +122,15 @@ export function validateSchedule(
       errors.push({
         employeeId: shift.employeeId,
         date: shift.date,
-        message: `Quá 9 giờ công ngày ${shift.date}.`,
+        rule: "shift-length",
+        message: `Quá ${MAX_PAID_MINUTES / 60} giờ công ngày ${shift.date}.`,
       });
     }
     if (shift.paidMinutes !== expectedPaid) {
       errors.push({
         employeeId: shift.employeeId,
         date: shift.date,
+        rule: "shift-length",
         message: `Giờ công không khớp giờ vào/ra/nghỉ ngày ${shift.date}.`,
       });
     }
@@ -192,6 +138,7 @@ export function validateSchedule(
       errors.push({
         employeeId: shift.employeeId,
         date: shift.date,
+        rule: "shift-length",
         message: `Sai giờ nghỉ ngày ${shift.date}: ${shift.pauseMinutes} thay vì ${expectedPause} phút.`,
       });
     }
@@ -202,63 +149,132 @@ export function validateSchedule(
   for (const emp of employees) {
     const empShifts = shiftsByEmployee.get(emp.id) ?? [];
 
-    // Höchstens ein Dienst pro Tag.
+    // Zwei Dienste an einem Tag sind erlaubt, solange sie sich nicht
+    // überschneiden – mittags und abends bei einem Laden, der zwischendurch
+    // schließt. Verboten bleibt nur, was sich überlappt.
     const seenDates = new Set<string>();
     for (const shift of empShifts) {
-      if (seenDates.has(shift.date)) {
+      const ueberschneidet = empShifts.some(
+        (a) =>
+          a !== shift &&
+          a.date === shift.date &&
+          a.startMinutes < shift.endMinutes &&
+          shift.startMinutes < a.endMinutes,
+      );
+      if (ueberschneidet && !seenDates.has(shift.date)) {
         errors.push({
           employeeId: emp.id,
           date: shift.date,
-          message: `Có nhiều hơn một ca ngày ${shift.date}.`,
+          rule: "shift-length",
+        message: `Có nhiều hơn một ca ngày ${shift.date}.`,
         });
       }
       seenDates.add(shift.date);
     }
 
     const assignedMinutes = empShifts.reduce((sum, s) => sum + s.paidMinutes, 0);
-    const vorher = priorShifts.filter((s) => s.employeeId === emp.id);
-    // Die Kette läuft über die Monatsgrenze: Mo–Sa im Januar + So im Februar
-    // sind sieben Tage am Stück, auch wenn jeder Monat für sich nur einen sieht.
-    const maxRun = maxConsecutiveRun([...vorher, ...empShifts].map((s) => s.date));
+    for (const date of seenDates) {
+      const paid = empShifts.filter((shift) => shift.date === date).reduce((sum, shift) => sum + shift.paidMinutes, 0);
+      if (paid > MAX_PAID_MINUTES) errors.push({ employeeId: emp.id, date, rule: "shift-length",
+        message: `${emp.name}: tổng giờ công ngày ${date} vượt ${MAX_PAID_MINUTES / 60} giờ.`,
+      });
+    }
+    const maxRun = maxConsecutiveRun(new Set(empShifts.map((s) => s.date)));
+    const soll = sollOf(emp);
 
-    // Minijob-Wochendeckel, Woche für Woche – einschließlich der Woche, die im
-    // Vormonat begonnen hat. Geplant wird mit MINIJOB_MAX_WEEKLY_HOURS; bis
-    // MINIJOB_FLEX_WEEKLY_HOURS darf der Nachschlag gehen, darüber ist es ein
-    // Verstoß (z. B. nach Handbearbeitung).
-    if (emp.employmentType === "MINIJOB") {
-      const proWoche = new Map<string, number>();
-      for (const s of [...vorher, ...empShifts]) {
-        const wk = weekStartOf(s.date);
-        proWoche.set(wk, (proWoche.get(wk) ?? 0) + s.paidMinutes);
+    if (emp.weeklyHours != null) {
+      const weeks = new Map<string, { paid: number; dates: Set<string> }>();
+      for (const shift of empShifts) {
+        const week = weekStartOf(shift.date);
+        const total = weeks.get(week) ?? { paid: 0, dates: new Set<string>() };
+        total.paid += shift.paidMinutes;
+        total.dates.add(shift.date);
+        weeks.set(week, total);
       }
-      const eigeneWochen = new Set(empShifts.map((s) => weekStartOf(s.date)));
-      for (const [wk, minuten] of proWoche) {
-        if (!eigeneWochen.has(wk)) continue; // reine Vormonatswoche: nicht unser Plan
-        if (minuten > MINIJOB_FLEX_WEEKLY_HOURS * 60) {
+      for (const [week, total] of weeks) {
+        if (total.paid > Math.round(emp.weeklyHours * 60)) {
           errors.push({
             employeeId: emp.id,
-            severity: "warning",
-            message: `${emp.name}: tuần từ ${wk.slice(8)}.${wk.slice(5, 7)}. làm ${minuten / 60}h, vượt ${MINIJOB_FLEX_WEEKLY_HOURS}h/tuần của minijob (đã tính cả cuối tháng trước).`,
+            date: week,
+            rule: "contract-max",
+            message: `${emp.name}: tuần ${week} xếp ${total.paid / 60}h, vượt hợp đồng ${emp.weeklyHours}h/tuần.`,
           });
         }
       }
     }
 
-    if (assignedMinutes !== emp.targetMinutes) {
-      const zuWenig = assignedMinutes < emp.targetMinutes;
+    // „Số ngày làm / tuần" gilt für jeden Vertrag, nicht nur für Wochenverträge.
+    if (emp.maxDaysPerWeek != null && emp.maxDaysPerWeek < 6) {
+      const datesByWeek = new Map<string, Set<string>>();
+      for (const shift of empShifts) {
+        const week = weekStartOf(shift.date);
+        datesByWeek.set(week, (datesByWeek.get(week) ?? new Set<string>()).add(shift.date));
+      }
+      for (const [week, dates] of datesByWeek) {
+        if (dates.size > emp.maxDaysPerWeek) {
+          errors.push({
+            employeeId: emp.id,
+            date: week,
+            rule: "max-days",
+            message: `${emp.name}: tuần ${week} làm ${dates.size} ngày, vượt giới hạn ${emp.maxDaysPerWeek} ngày/tuần.`,
+          });
+        }
+      }
+    }
+
+    // Weiche Regeln je Person: nur melden, der Plan bleibt gültig.
+    const ownRange = ownShiftRangeMinutes(emp);
+    if (ownRange) {
+      const outside = [...seenDates].filter((date) => {
+        const paid = empShifts.filter((shift) => shift.date === date).reduce((sum, shift) => sum + shift.paidMinutes, 0);
+        return paid < ownRange.min || paid > ownRange.max;
+      });
+      if (outside.length > 0) {
+        errors.push({
+          employeeId: emp.id,
+          severity: "warning",
+          rule: "own-shift-length",
+          message: `${emp.name}: ${outside.length} ngày ngoài độ dài ca ${minutesToShortHours(ownRange.min)}–${minutesToShortHours(ownRange.max)} (${outside.map((d) => d.slice(8, 10) + "." + d.slice(5, 7)).join(", ")}).`,
+        });
+      }
+    }
+    const windows = preferredWindowsOf(emp);
+    if (windows.length > 0) {
+      const outsideShifts = empShifts.filter(
+        (shift) => minutesOutsidePreferred(windows, weekdayKeyOf(parseIsoDate(shift.date)), shift) > 0,
+      );
+      if (outsideShifts.length > 0) {
+        errors.push({
+          employeeId: emp.id,
+          severity: "warning",
+          rule: "preferred-windows",
+          message: `${emp.name}: ${outsideShifts.length}/${empShifts.length} ca ngoài khung giờ ưu tiên (${[...new Set(outsideShifts.map((s) => s.date.slice(8, 10) + "." + s.date.slice(5, 7)))].join(", ")}).`,
+        });
+      }
+    }
+
+    const targetDifference = assignedMinutes - soll;
+    // Randwochen werden so gerundet, dass eine über zwei Monate laufende Woche
+    // den Wochenvertrag nie überschreitet (contract.ts). Ein Monat weicht dadurch
+    // um weniger als eine Rastereinheit (30 min) vom rechnerischen Wert ab.
+    if (Math.abs(targetDifference) >= SCHEDULE_SLOT_MINUTES) {
+      // Zu WENIG verteilt heißt: der Monat gibt nicht mehr her (oder eine feste
+      // Schicht trifft das Soll nicht ganz genau) – Warnung. Zu VIEL wäre ein
+      // echter Fehler im Plan.
+      const zuWenig = assignedMinutes < soll;
       errors.push({
         employeeId: emp.id,
-        // Zu WENIG verteilt heißt: der Monat gibt nicht mehr her – Warnung.
-        // Zu VIEL wäre ein echter Fehler im Plan.
         severity: zuWenig ? "warning" : "error",
+        rule: zuWenig ? "contract-hours" : "contract-max",
         message: zuWenig
-          ? `${emp.name}: mới xếp được ${assignedMinutes / 60}h / ${emp.targetMinutes / 60}h. ${grundFehlstunden(emp)}`
-          : `${emp.name}: xếp quá giờ định mức: ${assignedMinutes / 60} h thay vì ${emp.targetMinutes / 60} h.`,
+          ? `${emp.name}: thiếu ${minutesToShortHours(soll - assignedMinutes)} — mới xếp được ${minutesToShortHours(assignedMinutes)} / ${minutesToShortHours(soll)}.`
+          : `${emp.name}: xếp quá giờ định mức: ${minutesToShortHours(assignedMinutes)} thay vì ${minutesToShortHours(soll)}.`,
       });
     }
     if (maxRun > MAX_CONSECUTIVE_DAYS) {
       errors.push({
         employeeId: emp.id,
+        rule: "max-days",
         message: `${emp.name}: làm quá 6 ngày liên tiếp (${maxRun}).`,
       });
     }
@@ -266,11 +282,47 @@ export function validateSchedule(
     summaries.push({
       employee: emp,
       assignedMinutes,
-      targetMinutes: emp.targetMinutes,
-      diffMinutes: assignedMinutes - emp.targetMinutes,
+      targetMinutes: soll,
+      diffMinutes: assignedMinutes - soll,
       maxConsecutiveDays: maxRun,
       shiftCount: empShifts.length,
     });
+  }
+
+  // Feiertagspflicht: wer requiredOnHolidays trägt, muss an jedem GEÖFFNETEN
+  // Feiertag im Dienst sein (Vorgabe des Betriebs). Ohne Datumsliste lässt
+  // sich nicht sagen, ob der Laden offen hat – dann wird nicht geprüft.
+  const openDateSet = Array.isArray(openDays) ? new Set(openDays) : null;
+  if (openDateSet) {
+    for (const [date, name] of publicHolidayNames(_year)) {
+      if (!openDateSet.has(date)) continue;
+      for (const emp of employees) {
+        if (!emp.requiredOnHolidays || !mayWorkOn(emp, date)) continue;
+        if (shifts.some((shift) => shift.employeeId === emp.id && shift.date === date)) continue;
+        errors.push({
+          employeeId: emp.id,
+          date,
+          severity: "warning",
+          rule: "holiday-duty",
+          message: `${emp.name}: ngày lễ ${date} (${name}) chưa có ca — quán yêu cầu phải có mặt.`,
+        });
+      }
+    }
+  }
+
+  // Urlaub: Anspruch gilt fürs JAHR – geprüft gegen alle Tage dieses Jahres.
+  // Nur Warnung: mehr Urlaub kann vertraglich vereinbart oder übertragen sein.
+  for (const emp of employees) {
+    const anspruch = vacationEntitlement(emp);
+    const genommen = vacationDaysInYear(emp, _year);
+    if (genommen > anspruch) {
+      errors.push({
+        employeeId: emp.id,
+        severity: "warning",
+        rule: "days-off",
+        message: `${emp.name}: đã nghỉ phép ${genommen} ngày trong năm ${_year}, vượt ${anspruch} ngày theo quy định.`,
+      });
+    }
   }
 
   // Warnungen machen den Plan nicht ungültig – sonst blockiert eine zu große

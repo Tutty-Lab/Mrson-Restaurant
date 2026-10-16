@@ -31,7 +31,6 @@ import { MONTH_NAMES_DE } from "./dateFormat";
 import { employmentLabelDe } from "./employment";
 import { publicHolidayNames, publicHolidays } from "./holidays";
 import { isDayClosed } from "./workHours";
-import { employedOn } from "./availability";
 import { format } from "date-fns";
 
 /** Dateiname säubern: Umlaute/Akzente weg, nur unbedenkliche Zeichen behalten. */
@@ -228,13 +227,11 @@ function stundenzettelRowsFor(
     const datum = `${format(parseIsoDate(d), "dd.MM.yyyy")}\n${wd}`;
 
     if (dienste.length === 0) {
-      const bemerkung = !employedOn(employee, d)
-        ? "Nicht beschäftigt"
-        : closed
-          ? closed.note || "Betriebsruhe"
-          : holiday
-            ? `Frei (Feiertag: ${holiday})`
-            : "Frei";
+      const bemerkung = closed
+        ? closed.note || "Betriebsruhe"
+        : holiday
+          ? `Frei (Feiertag: ${holiday})`
+          : "Frei";
       return { shaded, shiftCount: 0, cells: [datum, "", "", "", "0,00", bemerkung] };
     }
 
@@ -449,6 +446,7 @@ function drawStundenzettel(
       ["Beschäftigungsart", employmentLabelDe(employee.employmentType)],
       ["Mitarbeiter", employee.name],
       ["Monat", MONTH_NAMES_DE[schedule.month - 1]],
+      ["Sollstunden", null], // von Hand einzutragen
       ["Jahr", String(schedule.year)],
     ],
     startY,
@@ -467,10 +465,10 @@ function drawStundenzettel(
   const summaryY = pageH - 30;
   const col3 = (pageW - 2 * MARGIN) / 3;
 
-  // Sollstunden und Differenz standen hier früher als leere Schreiblinien –
-  // auf Wunsch des Betriebs entfernt. Gedruckt wird nur, was geleistet wurde.
   const summary: Array<[string, string | null]> = [
     ["Gesamtstunden", `${minutesToDecimalHours(totalMinutes)} h`],
+    ["Sollstunden", null],
+    ["Differenz", null],
   ];
   summary.forEach(([label, value], i) => {
     const x = MARGIN + i * col3;
@@ -511,15 +509,39 @@ export async function buildStundenzettelPdf(
   opts: { dates?: string[]; periodLabel?: string } = {},
   onProgress?: (current: number, total: number) => void,
 ): Promise<jsPDF> {
-  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
-  const dates = opts.dates ?? datesOfMonth(schedule.year, schedule.month);
-  const periodLabel = opts.periodLabel ?? monthLabelDe(schedule.year, schedule.month);
+  return buildStundenzettelPdfFor([{ schedule, employees }], opts, onProgress);
+}
 
-  for (let i = 0; i < employees.length; i++) {
-    if (i > 0) doc.addPage();
-    drawStundenzettel(doc, schedule, employees[i], dates, periodLabel);
-    onProgress?.(i + 1, employees.length);
-    if (employees.length > 1) await new Promise((r) => setTimeout(r, 0));
+/** Eine Filiale mit den Mitarbeitern, die in die PDF sollen. */
+export type StundenzettelJob = { schedule: Schedule; employees: Employee[] };
+
+/**
+ * Stundenzettel-PDF über MEHRERE Filialen: alle Seiten landen in EINER Datei,
+ * in der Reihenfolge der Filialen. Der Betrieb druckt beide Läden zusammen aus,
+ * deshalb ist ein einziges Dokument richtig – nicht zwei Downloads.
+ */
+export async function buildStundenzettelPdfFor(
+  jobs: StundenzettelJob[],
+  opts: { dates?: string[]; periodLabel?: string } = {},
+  onProgress?: (current: number, total: number) => void,
+): Promise<jsPDF> {
+  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
+  const total = jobs.reduce((sum, job) => sum + job.employees.length, 0);
+  let done = 0;
+
+  for (const job of jobs) {
+    const dates = opts.dates ?? datesOfMonth(job.schedule.year, job.schedule.month);
+    const periodLabel = opts.periodLabel ?? monthLabelDe(job.schedule.year, job.schedule.month);
+    for (const employee of job.employees) {
+      if (done > 0) doc.addPage();
+      drawStundenzettel(doc, job.schedule, employee, dates, periodLabel);
+      // Zähler NICHT im optionalen Aufruf hochzählen: ohne onProgress würde
+      // onProgress?.(++done) gar nicht ausgewertet – dann lägen alle Seiten
+      // übereinander auf Seite 1.
+      done += 1;
+      onProgress?.(done, total);
+      if (total > 1) await new Promise((r) => setTimeout(r, 0));
+    }
   }
 
   return doc;
@@ -528,14 +550,18 @@ export async function buildStundenzettelPdf(
 // ── Datei ausliefern ─────────────────────────────────────────────────────────
 
 /**
- * PDF-Blob direkt als Datei herunterladen. MIME application/octet-stream +
- * .pdf-Name => auch iOS Safari / In-App-Browser speichern die Datei, statt sie
- * in einen neuen Tab zu öffnen und dort hängen zu bleiben.
+ * PDF-Blob direkt als Datei herunterladen (Attribut download).
+ *
+ * MIME bleibt application/pdf: Früher stand hier application/octet-stream –
+ * ein In-App-Browser, der „download" ignoriert (Messenger/Zalo-WebView),
+ * öffnete die Datei dann als TEXT, also eine Seite voller Zeichensalat. Mit
+ * application/pdf zeigt er im schlimmsten Fall das PDF an. Echte Browser
+ * (Chrome, Safari, Firefox) speichern wegen „download" trotzdem.
  */
 export function deliver(blob: Blob, filename: string): void {
   if (typeof document === "undefined") return;
-  const octet = new Blob([blob], { type: "application/octet-stream" });
-  const url = URL.createObjectURL(octet);
+  const pdf = blob.type === "application/pdf" ? blob : new Blob([blob], { type: "application/pdf" });
+  const url = URL.createObjectURL(pdf);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
@@ -677,6 +703,45 @@ export function buildDienstplanPdf(
   schedule: Schedule,
   opts: { dates: string[]; title: string; layout: SchedulePdfLayout; employeeIds?: string[] },
 ): jsPDF {
+  const doc = newDienstplanDoc(opts.layout);
+  drawDienstplan(doc, schedule, opts);
+  return doc;
+}
+
+/** Eine Filiale mit dem Zeitraum, der auf ihre Dienstplan-Seite soll. */
+export type DienstplanJob = {
+  schedule: Schedule;
+  dates: string[];
+  title: string;
+  employeeIds?: string[];
+};
+
+/** Dienstplan-PDF über MEHRERE Filialen: je Filiale eine Seite, eine Datei. */
+export function buildDienstplanPdfFor(jobs: DienstplanJob[], layout: SchedulePdfLayout): jsPDF {
+  const doc = newDienstplanDoc(layout);
+  jobs.forEach((job, index) => {
+    if (index > 0) doc.addPage();
+    drawDienstplan(doc, job.schedule, { ...job, layout });
+  });
+  return doc;
+}
+
+/** Leeres Dokument im passenden Format: der Monat liegt quer, die Woche hoch. */
+function newDienstplanDoc(layout: SchedulePdfLayout): jsPDF {
+  return new jsPDF({
+    unit: "mm",
+    format: "a4",
+    orientation: layout === "byDate" ? "landscape" : "portrait",
+    compress: true,
+  });
+}
+
+/** Zeichnet EINEN Dienstplan auf die aktuelle Seite. */
+function drawDienstplan(
+  doc: jsPDF,
+  schedule: Schedule,
+  opts: { dates: string[]; title: string; layout: SchedulePdfLayout; employeeIds?: string[] },
+): void {
   const employees =
     opts.employeeIds && opts.employeeIds.length
       ? schedule.employees.filter((e) => opts.employeeIds!.includes(e.id))
@@ -693,13 +758,6 @@ export function buildDienstplanPdf(
   const overrides = Object.fromEntries(schedule.dateOverrides.map((o) => [o.date, o]));
   const closedOn = (date: string) => isDayClosed(schedule.workHours, date, holidays, overrides);
 
-  const landscape = opts.layout === "byDate";
-  const doc = new jsPDF({
-    unit: "mm",
-    format: "a4",
-    orientation: landscape ? "landscape" : "portrait",
-    compress: true,
-  });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const startY = drawHeader(doc, "Dienstplan", schedule, opts.title);
@@ -777,5 +835,24 @@ export function buildDienstplanPdf(
   }
 
   drawSignatures(doc, ["Unterschrift Arbeitgeber", "Datum"], pageH - 14);
-  return doc;
+}
+
+export type ShareResult = "shared" | "cancelled" | "unsupported" | "failed";
+
+/**
+ * Bảng Chia sẻ của hệ thống („Lưu vào Tệp", gửi qua Zalo …) cho trình duyệt nhúng.
+ * Phải gọi TRỰC TIẾP trong lúc người dùng bấm nút: tạo PDF mất vài giây, gọi
+ * share sau đó thì trình duyệt coi như không có thao tác người dùng và từ chối.
+ */
+export async function sharePdf(blob: Blob, filename: string): Promise<ShareResult> {
+  if (typeof navigator === "undefined" || typeof File === "undefined") return "unsupported";
+  const file = new File([blob], filename, { type: "application/pdf" });
+  if (!navigator.canShare?.({ files: [file] })) return "unsupported";
+  try {
+    await navigator.share({ files: [file], title: filename });
+    return "shared";
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") return "cancelled";
+    return "failed";
+  }
 }

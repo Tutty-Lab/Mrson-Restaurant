@@ -1,32 +1,18 @@
 // ============================================================================
 // Wann darf eine Person überhaupt eingeplant werden?
 //
-// Drei Gründe sprechen dagegen, und alle kommen vom Nutzer, nicht aus der
-// Rechnung: ein Tag außerhalb des Beschäftigungszeitraums (Eintritt/Austritt),
-// ein Wochentag, an dem die Person grundsätzlich nicht arbeitet, und ein
-// eingetragener Urlaubstag.
-//
 // Alles steht hier an EINER Stelle, weil der Scheduler an mehreren Stellen
-// Termine vergibt: beim ersten Verteilen, beim Verschieben und beim Tauschen.
-// Bei einer früheren Filiale standen Sonderregeln nur im ersten Schritt – die
-// Reparaturläufe danach haben sie klaglos wieder kaputtgemacht.
+// Termine vergibt: beim ersten Verteilen, beim Umplanen einer Woche und beim
+// Verbessern der Besetzung. Eine Regel, die nur in einem Schritt steht, wird
+// von den Läufen danach wieder aufgehoben.
 // ============================================================================
 
-import type { Employee } from "../types";
-import { URLAUB_DAYS_PER_YEAR } from "../types";
-import { datesOfMonth, parseIsoDate, weekdayKeyOf } from "./demand";
-
-/** Urlaubstage dieser Person, als Set für schnelles Nachschlagen. */
-export function vacationSet(employee: Employee): Set<string> {
-  return new Set(employee.vacationDates ?? []);
-}
+import { URLAUB_DAYS_PER_YEAR, type Employee } from "../types";
+import { parseIsoDate, weekdayKeyOf } from "./demand";
 
 /**
- * Arbeitet diese Person an diesem Wochentag überhaupt?
- *
- * Leere oder fehlende Liste heißt "keine Einschränkung". Eine leere Liste als
- * "arbeitet nie" zu lesen wäre die gefährlichere Auslegung: wer das Häkchen
- * noch nicht gesetzt hat, wäre plötzlich unplanbar.
+ * Arbeitet diese Person an diesem Wochentag überhaupt? Leere/fehlende Liste =
+ * keine Einschränkung.
  */
 export function worksOnWeekday(employee: Employee, isoDate: string): boolean {
   const tage = employee.availableWeekdays;
@@ -34,87 +20,44 @@ export function worksOnWeekday(employee: Employee, isoDate: string): boolean {
   return tage.includes(weekdayKeyOf(parseIsoDate(isoDate)));
 }
 
-/** Ist die Person an diesem Tag im Urlaub? */
-export function onVacation(employee: Employee, isoDate: string): boolean {
-  return (employee.vacationDates ?? []).includes(isoDate);
+/**
+ * Hat die Person an diesem Tag schon angefangen? Ohne startDate: immer ja.
+ * Der ISO-Stringvergleich reicht, weil "yyyy-MM-dd" lexikografisch = zeitlich.
+ */
+export function hasStarted(employee: Employee, isoDate: string): boolean {
+  return employee.startDate == null || isoDate >= employee.startDate;
 }
 
 /**
- * Ist die Person an diesem Tag überhaupt beschäftigt (zwischen Eintritt und
- * Austritt, beide einschließlich)? ISO-Daten lassen sich als Text vergleichen.
+ * Ist die Person an diesem Tag schon weg? Ohne endDate: nie. Der Austritt ist
+ * der LETZTE Arbeitstag, zählt also noch mit.
  */
-export function employedOn(employee: Employee, isoDate: string): boolean {
-  if (employee.startDate && isoDate < employee.startDate) return false;
-  if (employee.endDate && isoDate > employee.endDate) return false;
-  return true;
+export function hasLeft(employee: Employee, isoDate: string): boolean {
+  return employee.endDate != null && isoDate > employee.endDate;
+}
+
+/** Zählt dieser Tag für den Vertrag dieser Person? (Eintritt … Austritt) */
+export function isEmployedOn(employee: Employee, isoDate: string): boolean {
+  return hasStarted(employee, isoDate) && !hasLeft(employee, isoDate);
 }
 
 /**
  * Die eine Frage, die jeder Planungsschritt stellen muss: darf diese Person an
- * diesem Datum arbeiten?
+ * diesem Datum arbeiten? (fester freier Wochentag, ein Eintritt nach diesem Tag
+ * oder ein Austritt davor sprechen dagegen)
  */
 export function mayWorkOn(employee: Employee, isoDate: string): boolean {
-  return (
-    employedOn(employee, isoDate) &&
-    worksOnWeekday(employee, isoDate) &&
-    !onVacation(employee, isoDate)
-  );
+  return worksOnWeekday(employee, isoDate) && isEmployedOn(employee, isoDate) && !onVacation(employee, isoDate);
 }
 
-/** Ist die Person an mindestens einem Tag des Monats beschäftigt? */
-export function employedInMonth(employee: Employee, year: number, month: number): boolean {
-  return datesOfMonth(year, month).some((d) => employedOn(employee, d));
-}
-
-/**
- * Monats-Soll unter Berücksichtigung von Eintritt und Austritt.
- *
- * Ganzer Monat beschäftigt => das eingetragene Soll unverändert. Kommt oder
- * geht jemand mitten im Monat, wird anteilig gerechnet: Soll × (offene Tage im
- * Beschäftigungszeitraum / offene Tage des Monats), auf ganze Stunden gerundet
- * (der Scheduler plant nur ganze Stunden). Was unter der kürzesten Schicht
- * bliebe, wird 0 – ein 2-h-Soll wäre unplanbar und würde den ganzen Monat
- * blockieren.
- */
-export function monthTargetMinutes(
-  employee: Employee,
-  year: number,
-  month: number,
-  isOpen: (isoDate: string) => boolean,
-): number {
-  const offen = datesOfMonth(year, month).filter(isOpen);
-  const beschaeftigt = offen.filter((d) => employedOn(employee, d));
-  if (beschaeftigt.length === offen.length) return employee.targetMinutes;
-  if (offen.length === 0 || beschaeftigt.length === 0) return 0;
-  const stunden = Math.round(
-    ((employee.targetMinutes / 60) * beschaeftigt.length) / offen.length,
-  );
-  return stunden < 3 ? 0 : stunden * 60;
-}
-
-/**
- * Die Belegschaft eines Monats: nur wer im Monat beschäftigt ist, mit dem
- * anteiligen Soll. Das ist die Liste, mit der geplant, geprüft und gedruckt
- * wird – die volle Liste braucht nur der Tab Nhân viên.
- */
-export function employeesForMonth(
-  employees: Employee[],
-  year: number,
-  month: number,
-  isOpen: (isoDate: string) => boolean,
-): Employee[] {
-  return employees
-    .filter((e) => employedInMonth(e, year, month))
-    .map((e) => {
-      const soll = monthTargetMinutes(e, year, month, isOpen);
-      return soll === e.targetMinutes ? e : { ...e, targetMinutes: soll };
-    });
+/** Hat die Person an diesem Tag Urlaub eingetragen? */
+export function onVacation(employee: Employee, isoDate: string): boolean {
+  return (employee.vacationDates ?? []).includes(isoDate);
 }
 
 /** Wie viele Urlaubstage hat die Person in diesem Jahr eingetragen? */
 export function vacationDaysInYear(employee: Employee, year: number): number {
-  const praefix = `${year}-`;
-  return (employee.vacationDates ?? []).filter((d) => d.startsWith(praefix)).length;
+  return (employee.vacationDates ?? []).filter((d) => d.startsWith(`${year}-`)).length;
 }
 
 /** Jahresanspruch dieser Person in Arbeitstagen. */
@@ -122,12 +65,8 @@ export function vacationEntitlement(employee: Employee): number {
   return URLAUB_DAYS_PER_YEAR[employee.employmentType];
 }
 
-/** Urlaubstage im geplanten Monat, aufsteigend sortiert. */
-export function vacationDatesInMonth(
-  employee: Employee,
-  year: number,
-  month: number,
-): string[] {
-  const praefix = `${year}-${String(month).padStart(2, "0")}-`;
-  return (employee.vacationDates ?? []).filter((d) => d.startsWith(praefix)).sort();
+/** Urlaubstage im Monat, aufsteigend sortiert. */
+export function vacationDatesInMonth(employee: Employee, year: number, month: number): string[] {
+  const prefix = `${year}-${String(month).padStart(2, "0")}-`;
+  return (employee.vacationDates ?? []).filter((d) => d.startsWith(prefix)).sort();
 }

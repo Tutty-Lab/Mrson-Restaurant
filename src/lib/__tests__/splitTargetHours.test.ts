@@ -11,13 +11,13 @@ describe("splitTargetHours – Vollzeit", () => {
       const parts = splitTargetHours(h, "VOLLZEIT");
       expect(sum(parts)).toBe(h);
       for (const p of parts) expect(p).toBeGreaterThanOrEqual(3);
-      for (const p of parts) expect(p).toBeLessThanOrEqual(9);
+      for (const p of parts) expect(p).toBeLessThanOrEqual(8);
     }
   });
 
   it("bevorzugt die längste Schicht (8 h) und damit möglichst wenige Dienste", () => {
     // 176 = 22×8
-    expect(splitTargetHours(176, "VOLLZEIT")).toEqual([...Array(22).fill(8)]);
+    expect(splitTargetHours(176, "VOLLZEIT")).toEqual(Array(22).fill(8));
     // Jedes Ziel wird mit der kleinstmöglichen Schichtzahl abgedeckt:
     // aufgerundet targetHours/8 Dienste.
     for (const h of [176, 178, 179, 180]) {
