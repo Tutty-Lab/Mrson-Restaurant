@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { UseScheduleReturn } from "../hooks/useSchedule";
 import type { Employee, Shift } from "../types";
 import {
@@ -64,7 +64,16 @@ function cellClass(shift: Shift | undefined): string {
   return `${base} ${!shift.generated ? "shift-custom" : ""}`;
 }
 
-export function ScheduleTab({ store }: { store: UseScheduleReturn }) {
+export function ScheduleTab({
+  store,
+  startSignal = 0,
+  onStarted,
+}: {
+  store: UseScheduleReturn;
+  /** > 0: „Tạo lịch" wurde in der Tab-Zeile gedrückt – Ablauf starten, dann onStarted. */
+  startSignal?: number;
+  onStarted?: () => void;
+}) {
   // Drucken (Monat/Woche) und Entsperren liegen im Tab „Bảng chấm công" –
   // dort sitzt alles, was Papier erzeugt.
   const { schedule, validation, generate, genError, isLocked, updateEmployee } = store;
@@ -147,6 +156,24 @@ export function ScheduleTab({ store }: { store: UseScheduleReturn }) {
 
   const hasEmployees = schedule.employees.length > 0;
 
+  /** „Tạo lịch" – derselbe Ablauf wie früher der Knopf hier im Tab. */
+  const startGenerate = () => {
+    // Gesperrter Monat: erst nachfragen, dann den Urlaub-Dialog öffnen
+    // (das anschließende Erzeugen hebt die Sperre auf).
+    if (isLocked && !confirmRegen) {
+      setConfirmRegen(true);
+      return;
+    }
+    setUrlaubOffen(true);
+    setConfirmRegen(false);
+  };
+  // Der grüne Knopf „Tạo lịch" in der Tab-Zeile (App.tsx) startet ihn.
+  useEffect(() => {
+    if (startSignal === 0) return;
+    if (hasEmployees) startGenerate();
+    onStarted?.();
+  }, [startSignal]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Debug-Zeilen und -Spalten: standardmäßig an (Wunsch des Betriebs), merkt
   // sich die Wahl je Gerät.
   const [debug, setDebugState] = useState<boolean>(() => {
@@ -196,39 +223,22 @@ export function ScheduleTab({ store }: { store: UseScheduleReturn }) {
           }}
         />
       )}
-      {/* Thanh thao tác */}
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        <button
-          onClick={() => {
-            // Gesperrter Monat: erst nachfragen, dann den Urlaub-Dialog öffnen
-            // (das anschließende Erzeugen hebt die Sperre auf).
-            if (isLocked && !confirmRegen) {
-              setConfirmRegen(true);
-              return;
-            }
-            setUrlaubOffen(true);
-            setConfirmRegen(false);
-          }}
-          disabled={!hasEmployees}
-          className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 active:bg-slate-800 disabled:opacity-40"
-        >
-          Tạo lịch làm việc
-        </button>
-        {confirmRegen && (
+      {/* Huỷ für die Rückfrage beim gesperrten Monat (Tạo lịch sitzt in der Tab-Zeile). */}
+      {confirmRegen && (
+        <div className="mb-3">
           <button
             onClick={() => setConfirmRegen(false)}
             className="rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
           >
             Huỷ
           </button>
-        )}
-        <span className="ml-auto text-sm text-slate-500">{monthLabel(schedule.year, schedule.month)}</span>
-      </div>
+        </div>
+      )}
 
       {isLocked && confirmRegen && (
         <div className="mb-3 rounded bg-amber-50 border border-amber-300 text-amber-900 text-sm px-3 py-2">
           Tháng này đã in &amp; khóa. <b>Tạo lại lịch sẽ mở khóa tháng và xóa dấu các tuần đã in</b> —
-          bản đã treo ở quán sẽ không còn khớp. Bấm lại <b>„Tạo lịch làm việc"</b> để tiếp tục.
+          bản đã treo ở quán sẽ không còn khớp. Bấm lại <b>„Tạo lịch"</b> để tiếp tục.
         </div>
       )}
 
@@ -242,7 +252,7 @@ export function ScheduleTab({ store }: { store: UseScheduleReturn }) {
           Lịch tháng này đã khóa vì đã in
           {schedule.lockedAt && ` lúc ${new Date(schedule.lockedAt).toLocaleString("vi-VN")}`} — chỉ
           xem, không sửa được. Mở khóa ở tab <b>Bảng chấm công</b>, hoặc bấm{" "}
-          <b>„Tạo lịch làm việc"</b> để tạo lại (sẽ mở khóa).
+          <b>„Tạo lịch"</b> để tạo lại (sẽ mở khóa).
         </div>
       )}
 
